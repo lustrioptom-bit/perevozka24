@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: perevozka24
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt && ./build.sh
+    startCommand: python app.py
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: perevozka-db
+          property: connectionString
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_IDS_RAW
+        sync: false
+      - key: CHANNEL_ID
+        sync: false
+      - key: PUBLIC_URL
+        generateValue: true
+      - key: WEBAPP_SECRET_KEY
+        generateValue: true
+
+  - type: postgresql
+    name: perevozka-db
+    plan: free
+    databaseName: perevozka
+    user: perevozka

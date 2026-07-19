@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Perevozka24</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<div class="app-header">
+    <h1>Perevozka24 <span class="promo-badge">0% комиссия</span></h1>
+</div>
+
+<!-- Tab: Feed -->
+<div id="tab-feed" class="tab-content active">
+    <div class="filter-row">
+        <button class="filter-chip active" data-filter="all" onclick="setFilter('all')">Все</button>
+        <button class="filter-chip" data-filter="freight" onclick="setFilter('freight')">Груз</button>
+        <button class="filter-chip" data-filter="passenger" onclick="setFilter('passenger')">Пассажиры</button>
+    </div>
+    <div id="feed-list">
+        <div class="loading">Загрузка...</div>
+    </div>
+</div>
+
+<!-- Tab: Map -->
+<div id="tab-map" class="tab-content">
+    <div id="map"></div>
+</div>
+
+<!-- Tab: Create Order -->
+<div id="tab-create" class="tab-content">
+    <div class="toggle-group">
+        <button data-type="freight" class="active" onclick="setCreateType('freight')">Грузоперевозка</button>
+        <button data-type="passenger" onclick="setCreateType('passenger')">Поездка</button>
+    </div>
+    <form id="create-form">
+        <div class="form-group">
+            <label>Откуда</label>
+            <input type="text" id="create-from" placeholder="Город, улица, дом" required>
+        </div>
+        <div class="form-group">
+            <label>Куда</label>
+            <input type="text" id="create-to" placeholder="Город, улица, дом" required>
+        </div>
+        <div class="form-group">
+            <label>Дата и время</label>
+            <input type="datetime-local" id="create-date" required>
+        </div>
+        <div class="form-group">
+            <label>Бюджет</label>
+            <input type="number" id="create-price" min="1" placeholder="Например: 2500" required>
+        </div>
+        <div class="form-group">
+            <label>Описание (вес, объём, количество мест)</label>
+            <textarea id="create-desc" placeholder="Стройматериалы, 2 паллеты..."></textarea>
+        </div>
+        <button class="btn btn-primary" type="submit" style="width:100%">Опубликовать заказ</button>
+    </form>
+</div>
+
+<!-- Tab: Profile -->
+<div id="tab-profile" class="tab-content">
+    <div id="profile-content">
+        <div class="loading">Загрузка...</div>
+    </div>
+</div>
+
+<!-- Bottom Navigation -->
+<nav class="bottom-nav">
+    <button data-tab="feed" class="active">
+        Лента
+    </button>
+    <button data-tab="map">
+        Карта
+    </button>
+    <button data-tab="create">
+        Создать
+    </button>
+    <button data-tab="profile">
+        Профиль
+    </button>
+</nav>
+
+<!-- Bid Modal -->
+<div id="bid-modal" class="modal-overlay" onclick="if(event.target===this)closeBidModal()">
+    <div class="modal-content" id="bid-modal-body"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/static/js/app_v2.js"></script>
+</body>
+</html>

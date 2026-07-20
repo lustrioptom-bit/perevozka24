@@ -188,7 +188,6 @@ async def my_orders(request: Request, session: AsyncSession = Depends(get_sessio
     user_id = _get_user_id(request)
     query = select(Order).where(
         or_(Order.customer_id == user_id, Order.driver_id == user_id),
-        Order.status.in_([OrderStatus.active, OrderStatus.in_transit]),
     ).order_by(Order.created_at.desc())
     result = await session.execute(query)
     orders = result.scalars().all()

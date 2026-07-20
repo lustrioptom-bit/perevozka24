@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Request, Depends
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.engine import get_session
 from db.models import User, Order, Bid, Vehicle, OrderStatus, OrderType, BidStatus, UserRole
 from webapp.routers.schemas import (
-    OrderCreate, BidCreate, BidResponse, RatingSubmit, VehicleCreate, RoleUpdate,
+    OrderCreate, BidCreate, BidResponse, RatingSubmit, VehicleCreate, RoleUpdate, PhoneUpdate,
 )
 from bot.utils.geo import haversine, geocode_address, get_road_route
 from bot.utils.helpers import COMPLETED_DEALS_PROMO_LIMIT
@@ -14,8 +14,6 @@ router = APIRouter(prefix="/api", tags=["api"])
 
 
 def _get_user_id(request: Request) -> int:
-    init_data = request.headers.get("X-Telegram-Init-Data", "")
-    # In production, validate init_data with HMAC. For MVP, extract user from query param.
     return int(request.query_params.get("user_id", 0))
 
 
@@ -35,6 +33,7 @@ async def get_user(user_id: int, session: AsyncSession = Depends(get_session)):
         "id": user.id,
         "username": user.username,
         "full_name": user.full_name,
+        "phone": user.phone,
         "role": user.role.value,
         "rating": user.rating,
         "deals_completed": user.deals_completed,
@@ -50,6 +49,18 @@ async def update_role(body: RoleUpdate, request: Request, session: AsyncSession 
     if not user:
         return {"error": "not_found"}
     user.role = UserRole(body.role)
+    await session.commit()
+    return {"ok": True}
+
+
+@router.post("/user/phone")
+async def update_phone(body: PhoneUpdate, request: Request, session: AsyncSession = Depends(get_session)):
+    user_id = _get_user_id(request)
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        return {"error": "not_found"}
+    user.phone = body.phone
     await session.commit()
     return {"ok": True}
 
@@ -133,7 +144,6 @@ async def create_order(body: OrderCreate, request: Request, session: AsyncSessio
     await session.commit()
     await session.refresh(order)
 
-    # Post to channel
     try:
         from aiogram import Bot
         from config import settings
@@ -145,7 +155,6 @@ async def create_order(body: OrderCreate, request: Request, session: AsyncSessio
         import logging
         logging.getLogger(__name__).error("Channel post failed: %s", e, exc_info=True)
 
-    # Notify drivers
     try:
         from bot.utils.helpers import notify_drivers_new_order
         from aiogram import Bot
@@ -169,6 +178,45 @@ async def orders_feed(
     if type_filter in ("passenger", "freight"):
         query = query.where(Order.type == OrderType(type_filter))
     query = query.order_by(Order.created_at.desc()).limit(50)
+    result = await session.execute(query)
+    orders = result.scalars().all()
+    return [_order_to_dict(o) for o in orders]
+
+
+@router.get("/orders/my")
+async def my_orders(request: Request, session: AsyncSession = Depends(get_session)):
+    user_id = _get_user_id(request)
+    query = select(Order).where(
+        or_(Order.customer_id == user_id, Order.driver_id == user_id),
+        Order.status.in_([OrderStatus.active, OrderStatus.in_transit]),
+    ).order_by(Order.created_at.desc())
+    result = await session.execute(query)
+    orders = result.scalars().all()
+    out = []
+    for o in orders:
+        d = _order_to_dict(o)
+        if o.driver_id and o.driver_id != user_id:
+            driver = (await session.execute(select(User).where(User.id == o.driver_id))).scalar_one_or_none()
+            if driver:
+                d["driver_name"] = driver.full_name or driver.username or str(driver.id)
+                d["driver_phone"] = driver.phone
+                d["driver_rating"] = driver.rating
+        if o.customer_id and o.customer_id != user_id:
+            customer = (await session.execute(select(User).where(User.id == o.customer_id))).scalar_one_or_none()
+            if customer:
+                d["customer_name"] = customer.full_name or customer.username or str(customer.id)
+                d["customer_phone"] = customer.phone
+        out.append(d)
+    return out
+
+
+@router.get("/orders/history")
+async def order_history(request: Request, session: AsyncSession = Depends(get_session)):
+    user_id = _get_user_id(request)
+    query = select(Order).where(
+        or_(Order.customer_id == user_id, Order.driver_id == user_id),
+        Order.status.in_([OrderStatus.completed, OrderStatus.cancelled]),
+    ).order_by(Order.created_at.desc()).limit(30)
     result = await session.execute(query)
     orders = result.scalars().all()
     return [_order_to_dict(o) for o in orders]
@@ -200,12 +248,25 @@ async def orders_map(
 
 
 @router.get("/orders/{order_id}")
-async def get_order(order_id: int, session: AsyncSession = Depends(get_session)):
+async def get_order(order_id: int, request: Request, session: AsyncSession = Depends(get_session)):
+    user_id = _get_user_id(request)
     result = await session.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
         return {"error": "not_found"}
-    return _order_to_dict(order)
+    d = _order_to_dict(order)
+    if order.driver_id:
+        driver = (await session.execute(select(User).where(User.id == order.driver_id))).scalar_one_or_none()
+        if driver:
+            d["driver_name"] = driver.full_name or driver.username or str(driver.id)
+            d["driver_phone"] = driver.phone
+            d["driver_rating"] = driver.rating
+    if order.customer_id:
+        customer = (await session.execute(select(User).where(User.id == order.customer_id))).scalar_one_or_none()
+        if customer:
+            d["customer_name"] = customer.full_name or customer.username or str(customer.id)
+            d["customer_phone"] = customer.phone
+    return d
 
 
 @router.get("/orders/{order_id}/bids")
@@ -248,7 +309,6 @@ async def create_bid(body: BidCreate, request: Request, session: AsyncSession = 
     await session.commit()
     await session.refresh(bid)
 
-    # Notify customer
     try:
         from aiogram import Bot
         from config import settings
@@ -290,16 +350,60 @@ async def respond_to_bid(body: BidResponse, request: Request, session: AsyncSess
         order.price = bid.proposed_price
         order.status = OrderStatus.active
 
-        # Reject other bids
         other_bids = await session.execute(
             select(Bid).where(and_(Bid.order_id == order.id, Bid.id != bid.id, Bid.status == BidStatus.pending))
         )
         for ob in other_bids.scalars().all():
             ob.status = BidStatus.rejected
+
+        try:
+            from aiogram import Bot
+            from config import settings
+            bot = Bot(token=settings.BOT_TOKEN)
+            driver = (await session.execute(select(User).where(User.id == bid.driver_id))).scalar_one_or_none()
+            if driver:
+                customer = (await session.execute(select(User).where(User.id == order.customer_id))).scalar_one_or_none()
+                phone_text = f"\nТелефон: {customer.phone}" if customer and customer.phone else ""
+                await bot.send_message(
+                    bid.driver_id,
+                    f"Вашу ставку на заказ #{order.id} приняли!\n"
+                    f"Маршрут: {order.from_text} -> {order.to_text}\n"
+                    f"Цена: {order.price} \u20b4{phone_text}\n\n"
+                    f"Свяжитесь с клиентом для деталей.",
+                )
+            await bot.session.close()
+        except Exception:
+            pass
     else:
         bid.status = BidStatus.rejected
 
     await session.commit()
+    return {"ok": True}
+
+
+@router.post("/orders/{order_id}/in_transit")
+async def order_in_transit(order_id: int, request: Request, session: AsyncSession = Depends(get_session)):
+    user_id = _get_user_id(request)
+    result = await session.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        return {"error": "not_found"}
+    if order.driver_id != user_id:
+        return {"error": "forbidden"}
+    if order.status != OrderStatus.active:
+        return {"error": "wrong_status"}
+    order.status = OrderStatus.in_transit
+    await session.commit()
+
+    try:
+        from aiogram import Bot
+        from config import settings
+        bot = Bot(token=settings.BOT_TOKEN)
+        await bot.send_message(order.customer_id, f"Водитель выехал по заказу #{order.id}!")
+        await bot.session.close()
+    except Exception:
+        pass
+
     return {"ok": True}
 
 
@@ -310,8 +414,10 @@ async def complete_order(order_id: int, request: Request, session: AsyncSession 
     order = result.scalar_one_or_none()
     if not order:
         return {"error": "not_found"}
-    if order.customer_id != user_id and order.driver_id != user_id:
+    if order.driver_id != user_id:
         return {"error": "forbidden"}
+    if order.status not in (OrderStatus.active, OrderStatus.in_transit):
+        return {"error": "wrong_status"}
 
     order.status = OrderStatus.completed
 
@@ -328,6 +434,32 @@ async def complete_order(order_id: int, request: Request, session: AsyncSession 
         customer.promo_deals_used += 1
 
     await session.commit()
+
+    try:
+        from aiogram import Bot
+        from config import settings
+        bot = Bot(token=settings.BOT_TOKEN)
+        await bot.send_message(order.customer_id, f"Заказ #{order.id} выполнен! Оцените водителя в приложении.")
+        await bot.session.close()
+    except Exception:
+        pass
+
+    return {"ok": True}
+
+
+@router.post("/orders/{order_id}/cancel")
+async def cancel_order(order_id: int, request: Request, session: AsyncSession = Depends(get_session)):
+    user_id = _get_user_id(request)
+    result = await session.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        return {"error": "not_found"}
+    if order.customer_id != user_id:
+        return {"error": "forbidden"}
+    if order.status not in (OrderStatus.new, OrderStatus.active):
+        return {"error": "wrong_status"}
+    order.status = OrderStatus.cancelled
+    await session.commit()
     return {"ok": True}
 
 
@@ -342,6 +474,8 @@ async def rate_order(order_id: int, body: RatingSubmit, request: Request, sessio
         return {"error": "forbidden"}
     if not order.driver_id:
         return {"error": "no_driver"}
+    if order.status != OrderStatus.completed:
+        return {"error": "not_completed"}
 
     driver_result = await session.execute(select(User).where(User.id == order.driver_id))
     driver = driver_result.scalar_one_or_none()
@@ -351,7 +485,6 @@ async def rate_order(order_id: int, body: RatingSubmit, request: Request, sessio
 
     await session.commit()
 
-    # Post review to channel
     try:
         from aiogram import Bot
         from config import settings
@@ -372,8 +505,6 @@ async def promo_stats(session: AsyncSession = Depends(get_session)):
     ).scalar() or 0
     return {"completed": completed, "limit": COMPLETED_DEALS_PROMO_LIMIT, "is_promo_active": completed < COMPLETED_DEALS_PROMO_LIMIT}
 
-
-# ─── Geocode ───
 
 @router.get("/geocode")
 async def api_geocode(address: str):

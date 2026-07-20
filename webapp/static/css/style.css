@@ -542,3 +542,28 @@ body {
     color: #fff;
     border-color: var(--tg-accent);
 }
+
+/* Rate modal stars */
+.rate-star {
+    font-size: 32px;
+    background: none;
+    border: none;
+    color: var(--tg-border);
+    cursor: pointer;
+    transition: color 0.15s;
+    padding: 0 4px;
+}
+
+.rate-star.active {
+    color: var(--tg-warning);
+}
+
+/* Bid modal action buttons flex */
+.bid-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.bid-actions .btn {
+    flex: 1;
+}

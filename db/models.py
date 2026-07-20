@@ -40,6 +40,7 @@ class OrderType(str, enum.Enum):
 class OrderStatus(str, enum.Enum):
     new = "new"
     active = "active"
+    in_transit = "in_transit"
     completed = "completed"
     cancelled = "cancelled"
 

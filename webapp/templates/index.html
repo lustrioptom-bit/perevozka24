@@ -30,6 +30,13 @@
     <div id="map"></div>
 </div>
 
+<!-- Tab: My Orders -->
+<div id="tab-my" class="tab-content">
+    <div id="my-orders-list">
+        <div class="loading">Загрузка...</div>
+    </div>
+</div>
+
 <!-- Tab: Create Order -->
 <div id="tab-create" class="tab-content">
     <div class="toggle-group">
@@ -76,6 +83,9 @@
     <button data-tab="map">
         Карта
     </button>
+    <button data-tab="my">
+        Мои
+    </button>
     <button data-tab="create">
         Создать
     </button>
@@ -84,7 +94,7 @@
     </button>
 </nav>
 
-<!-- Bid Modal -->
+<!-- Modal -->
 <div id="bid-modal" class="modal-overlay" onclick="if(event.target===this)closeBidModal()">
     <div class="modal-content" id="bid-modal-body"></div>
 </div>

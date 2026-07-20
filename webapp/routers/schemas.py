@@ -3,7 +3,7 @@ from pydantic import BaseModel, field_validator
 
 
 class OrderCreate(BaseModel):
-    type: str  # "passenger" | "freight"
+    type: str
     from_text: str
     to_text: str
     from_lat: float
@@ -32,12 +32,12 @@ class BidCreate(BaseModel):
 
 class BidResponse(BaseModel):
     bid_id: int
-    action: str  # "accept" | "reject"
+    action: str
 
 
 class RatingSubmit(BaseModel):
     order_id: int
-    rating: int  # 1-5
+    rating: int
     review: str | None = None
 
 
@@ -50,4 +50,8 @@ class VehicleCreate(BaseModel):
 
 
 class RoleUpdate(BaseModel):
-    role: str  # "client" | "driver" | "both"
+    role: str
+
+
+class PhoneUpdate(BaseModel):
+    phone: str

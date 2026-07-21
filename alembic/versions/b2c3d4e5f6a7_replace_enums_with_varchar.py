@@ -20,6 +20,8 @@ def upgrade() -> None:
     op.execute("ALTER TABLE orders ALTER COLUMN status TYPE VARCHAR(20) USING status::text")
     op.execute("ALTER TABLE bids ALTER COLUMN status TYPE VARCHAR(20) USING status::text")
     op.execute("ALTER TABLE users ALTER COLUMN role TYPE VARCHAR(20) USING role::text")
+    op.execute("ALTER TABLE vehicles ALTER COLUMN type TYPE VARCHAR(20) USING type::text")
+    op.execute("ALTER TABLE orders ALTER COLUMN type TYPE VARCHAR(20) USING type::text")
 
 
 def downgrade() -> None:

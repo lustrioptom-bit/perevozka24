@@ -188,20 +188,25 @@ async def my_orders(request: Request, session: AsyncSession = Depends(get_sessio
     user_id = _get_user_id(request)
     query = select(Order).where(
         or_(Order.customer_id == user_id, Order.driver_id == user_id),
-        Order.status.in_([OrderStatus.active, OrderStatus.in_transit]),
-    ).order_by(Order.created_at.desc())
+    ).order_by(Order.created_at.desc()).limit(30)
     result = await session.execute(query)
     orders = result.scalars().all()
     out = []
     for o in orders:
         d = _order_to_dict(o)
-        if o.driver_id and o.driver_id != user_id:
+        if o.driver_id is not None and o.driver_id != user_id:
             driver = (await session.execute(select(User).where(User.id == o.driver_id))).scalar_one_or_none()
             if driver:
                 d["driver_name"] = driver.full_name or driver.username or str(driver.id)
                 d["driver_phone"] = driver.phone
                 d["driver_rating"] = driver.rating
-        if o.customer_id and o.customer_id != user_id:
+                vehicle = (await session.execute(
+                    select(Vehicle).where(Vehicle.user_id == driver.id).limit(1)
+                )).scalar_one_or_none()
+                if vehicle:
+                    d["driver_vehicle"] = vehicle.make_model
+                    d["driver_plate"] = vehicle.license_plate
+        if o.customer_id is not None and o.customer_id != user_id:
             customer = (await session.execute(select(User).where(User.id == o.customer_id))).scalar_one_or_none()
             if customer:
                 d["customer_name"] = customer.full_name or customer.username or str(customer.id)
@@ -255,13 +260,19 @@ async def get_order(order_id: int, request: Request, session: AsyncSession = Dep
     if not order:
         return {"error": "not_found"}
     d = _order_to_dict(order)
-    if order.driver_id:
+    if order.driver_id is not None:
         driver = (await session.execute(select(User).where(User.id == order.driver_id))).scalar_one_or_none()
         if driver:
             d["driver_name"] = driver.full_name or driver.username or str(driver.id)
             d["driver_phone"] = driver.phone
             d["driver_rating"] = driver.rating
-    if order.customer_id:
+            vehicle = (await session.execute(
+                select(Vehicle).where(Vehicle.user_id == driver.id).limit(1)
+            )).scalar_one_or_none()
+            if vehicle:
+                d["driver_vehicle"] = vehicle.make_model
+                d["driver_plate"] = vehicle.license_plate
+    if order.customer_id is not None:
         customer = (await session.execute(select(User).where(User.id == order.customer_id))).scalar_one_or_none()
         if customer:
             d["customer_name"] = customer.full_name or customer.username or str(customer.id)
@@ -275,17 +286,24 @@ async def get_order_bids(order_id: int, session: AsyncSession = Depends(get_sess
         select(Bid, User).join(User, Bid.driver_id == User.id).where(Bid.order_id == order_id)
     )
     rows = result.all()
-    return [
-        {
+    out = []
+    for bid, user in rows:
+        d = {
             "bid_id": bid.id,
             "driver_id": bid.driver_id,
             "driver_name": user.full_name or user.username or str(user.id),
             "driver_rating": user.rating,
             "proposed_price": bid.proposed_price,
-            "status": bid.status.value,
+            "status": bid.status.value if hasattr(bid.status, 'value') else bid.status,
         }
-        for bid, user in rows
-    ]
+        vehicle = (await session.execute(
+            select(Vehicle).where(Vehicle.user_id == user.id).limit(1)
+        )).scalar_one_or_none()
+        if vehicle:
+            d["driver_vehicle"] = vehicle.make_model
+            d["driver_plate"] = vehicle.license_plate
+        out.append(d)
+    return out
 
 
 @router.post("/bids")

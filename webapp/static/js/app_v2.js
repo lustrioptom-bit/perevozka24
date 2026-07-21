@@ -159,6 +159,9 @@ async function loadMyOrders() {
         var role = isCustomer ? 'Клиент' : 'Водитель';
         var otherName = isCustomer ? (o.driver_name || '') : (o.customer_name || '');
         var otherPhone = isCustomer ? (o.driver_phone || '') : (o.customer_phone || '');
+        var otherVehicle = isCustomer ? (o.driver_vehicle || '') : '';
+        var otherPlate = isCustomer ? (o.driver_plate || '') : '';
+        var otherRating = isCustomer ? (o.driver_rating || '') : '';
         var dt = new Date(o.date_time);
         var dateStr = dt.toLocaleDateString('ru-RU') + ' ' + dt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 
@@ -171,7 +174,12 @@ async function loadMyOrders() {
             '<div class="card-date">' + dateStr + ' | ' + role + '</div>' +
             (otherName ? '<div style="font-size:12px;margin-top:4px">' +
                 esc(otherName) +
+                (otherRating ? ' <span style="color:var(--tg-warning)">&#9733;</span> ' + otherRating : '') +
                 (otherPhone ? ' | ' + esc(otherPhone) : '') +
+            '</div>' : '') +
+            (otherVehicle ? '<div style="font-size:11px;color:var(--tg-text-secondary);margin-top:2px">' +
+                esc(otherVehicle) +
+                (otherPlate ? ' | ' + esc(otherPlate) : '') +
             '</div>' : '') +
             '<div class="card-footer" style="flex-wrap:wrap;gap:6px">';
 
@@ -461,10 +469,14 @@ async function loadExistingBids(orderId) {
     if (!Array.isArray(bids) || !bids.length) { section.innerHTML = ''; return; }
     var html = '<h4 style="font-size:14px;margin-bottom:8px">Отклики (' + bids.length + ')</h4>';
     bids.forEach(function(b) {
-        html += '<div class="bid-item">' +
-            '<div class="bid-driver">' + esc(b.driver_name) + ' (рейтинг: ' + b.driver_rating + ')</div>' +
-            '<div style="display:flex;align-items:center;gap:8px">' +
+        var vehicleText = b.driver_vehicle ? esc(b.driver_vehicle) + (b.driver_plate ? ' (' + esc(b.driver_plate) + ')' : '') : '';
+        html += '<div class="bid-item" style="flex-direction:column;align-items:stretch">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center">' +
+                '<div class="bid-driver">' + esc(b.driver_name) + ' <span style="color:var(--tg-warning)">&#9733;</span> ' + b.driver_rating + '</div>' +
                 '<span class="bid-price">' + b.proposed_price + ' &#8372;</span>' +
+            '</div>' +
+            (vehicleText ? '<div style="font-size:11px;color:var(--tg-text-secondary);margin-top:2px">' + vehicleText + '</div>' : '') +
+            '<div style="display:flex;align-items:center;gap:8px;margin-top:6px">' +
                 (b.status === 'pending' && String(b.driver_id) !== String(state.userId)
                     ? '<button class="btn btn-success btn-sm" onclick="respondBid(' + b.bid_id + ', \'accept\')">Принять</button> ' +
                       '<button class="btn btn-danger btn-sm" onclick="respondBid(' + b.bid_id + ', \'reject\')">Отклонить</button>'

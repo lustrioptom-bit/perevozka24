@@ -1,4 +1,4 @@
-"""add in_transit to orderstatus enum
+"""add in_transit to orderstatus enum (superseded by varchar migration)
 
 Revision ID: a1b2c3d4e5f6
 Revises: 5c4ce6d4334d
@@ -17,7 +17,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.execute("ALTER TYPE orderstatus ADD VALUE IF NOT EXISTS 'in_transit'")
+    pass
 
 
 def downgrade() -> None:

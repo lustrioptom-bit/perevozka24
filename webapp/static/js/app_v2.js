@@ -31,11 +31,33 @@ const state = {
 
 console.log('WebApp init, userId:', state.userId);
 
+var userIdValid = state.userId && state.userId !== '0' && state.userId !== 0;
+
 document.addEventListener('DOMContentLoaded', function() {
+    if (!userIdValid) {
+        document.getElementById('app').innerHTML =
+            '<div style="display:flex;align-items:center;justify-content:center;height:100vh;padding:24px;text-align:center">' +
+                '<div>' +
+                    '<div style="font-size:48px;margin-bottom:16px">&#9888;</div>' +
+                    '<h2>Откройте приложение через Telegram</h2>' +
+                    '<p style="color:var(--tg-text-secondary);margin-top:8px">Нажмите «Открыть приложение» в чате с ботом</p>' +
+                    '<a href="https://t.me/perevozkakh_bot" class="btn btn-primary" style="margin-top:16px;display:inline-block;text-decoration:none">Открыть бота</a>' +
+                '</div>' +
+            '</div>';
+        return;
+    }
     initNavigation();
     loadProfile();
     loadPromo();
     switchTab('feed');
+
+    var startapp = new URLSearchParams(window.location.search).get('startapp');
+    if (startapp && startapp.startsWith('order_')) {
+        var orderId = parseInt(startapp.replace('order_', ''));
+        if (orderId) {
+            setTimeout(function() { openBidModal(orderId); }, 500);
+        }
+    }
 });
 
 function initNavigation() {
@@ -62,6 +84,7 @@ function switchTab(tab) {
 
 async function api(path, opts) {
     opts = opts || {};
+    if (!userIdValid) return null;
     var sep = path.includes('?') ? '&' : '?';
     var url = API + path + sep + 'user_id=' + state.userId;
     try {
@@ -197,6 +220,10 @@ async function loadMyOrders() {
         }
 
         html += '</div></div>';
+
+        if (isCustomer && o.status === 'new') {
+            html += '<div style="margin-top:0"><button class="btn btn-primary btn-sm" onclick="openBidModal(' + o.id + ')">Отклики</button></div>';
+        }
     });
     container.innerHTML = html;
 }
@@ -437,28 +464,37 @@ async function openBidModal(orderId) {
     var modal = document.getElementById('bid-modal');
     var body = document.getElementById('bid-modal-body');
     var dt = new Date(order.date_time);
+    var isOwner = String(order.customer_id) === String(state.userId);
 
-    body.innerHTML =
-        '<h3>Отклик на заказ #' + order.id + '</h3>' +
+    var html =
+        '<h3>' + (isOwner ? 'Отклики на заказ #' + order.id : 'Отклик на заказ #' + order.id) + '</h3>' +
         '<div class="order-card" style="margin:12px 0">' +
             '<div class="card-route">' + esc(order.from_text) + ' &rarr; ' + esc(order.to_text) + '</div>' +
             '<div class="card-date">' + dt.toLocaleDateString('ru-RU') + ' ' + dt.toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'}) + '</div>' +
             (order.road_distance_km ? '<div style="font-size:12px;color:var(--tg-text-secondary);margin-top:4px">' + order.road_distance_km + ' км по дороге</div>' : '') +
             '<div class="card-price" style="margin-top:6px">Бюджет клиента: ' + order.price + ' &#8372;</div>' +
-        '</div>' +
-        '<div class="form-group">' +
-            '<label>Ваша цена (&#8372;)</label>' +
-            '<input type="number" id="bid-price" value="' + order.price + '" min="1">' +
-        '</div>' +
-        '<p style="font-size:12px;color:var(--tg-text-secondary);margin-bottom:12px">' +
-            'Оставьте цену как есть или измените для торга.' +
-        '</p>' +
-        '<div style="display:flex;gap:8px">' +
-            '<button class="btn btn-primary" style="flex:1" onclick="submitBid(' + order.id + ')">Отправить</button>' +
-            '<button class="btn btn-outline" onclick="closeBidModal()">Закрыть</button>' +
-        '</div>' +
-        '<div id="bids-section" style="margin-top:16px"></div>';
+        '</div>';
 
+    if (!isOwner) {
+        html +=
+            '<div class="form-group">' +
+                '<label>Ваша цена (&#8372;)</label>' +
+                '<input type="number" id="bid-price" value="' + order.price + '" min="1">' +
+            '</div>' +
+            '<p style="font-size:12px;color:var(--tg-text-secondary);margin-bottom:12px">' +
+                'Оставьте цену как есть или измените для торга.' +
+            '</p>' +
+            '<div style="display:flex;gap:8px">' +
+                '<button class="btn btn-primary" style="flex:1" onclick="submitBid(' + order.id + ')">Отправить</button>' +
+                '<button class="btn btn-outline" onclick="closeBidModal()">Закрыть</button>' +
+            '</div>';
+    } else {
+        html += '<button class="btn btn-outline" onclick="closeBidModal()" style="margin-bottom:12px;width:100%">Закрыть</button>';
+    }
+
+    html += '<div id="bids-section" style="margin-top:16px"></div>';
+
+    body.innerHTML = html;
     modal.classList.add('show');
     loadExistingBids(orderId);
 }

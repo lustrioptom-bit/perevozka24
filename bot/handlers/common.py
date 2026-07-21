@@ -20,6 +20,18 @@ def _webapp_url(user_id: int = 0) -> str:
 async def cmd_start(message: Message, session):
     user = await get_or_create_user(session, message.from_user.id, message.from_user.username, message.from_user.full_name)
     url = _webapp_url(message.from_user.id)
+
+    payload = message.text.replace("/start", "").strip()
+    if payload.startswith("order_"):
+        order_id = payload.replace("order_", "")
+        url += f"&startapp=order_{order_id}"
+        await message.answer(
+            f"Откройте приложение, чтобы откликнуться на заказ #{order_id}:",
+            reply_markup=get_start_keyboard(url),
+            parse_mode="HTML",
+        )
+        return
+
     await message.answer(
         f"Привет, {message.from_user.first_name}!\n\n"
         "<b>Perevozka24</b> — платформа для поиска попутчиков и грузоперевозок.\n\n"

@@ -43,13 +43,13 @@ def get_bid_notification_keyboard(webapp_url: str, order_id: int) -> InlineKeybo
     )
 
 
-def get_channel_keyboard(order_id: int, webapp_url: str) -> InlineKeyboardMarkup:
+def get_channel_keyboard(order_id: int, webapp_url: str, bot_username: str = "perevozkakh_bot") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text="Откликнуться на заказ",
-                    url=f"{webapp_url}?startapp=order_{order_id}",
+                    url=f"https://t.me/{bot_username}?start=order_{order_id}",
                 )
             ]
         ]

@@ -11,6 +11,7 @@ from sqlalchemy import (
     Text,
     Float,
     DateTime,
+    Enum as SAEnum,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -57,7 +58,7 @@ class User(Base):
     username: Mapped[str | None] = mapped_column(String(128), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     full_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    role: Mapped[UserRole] = mapped_column(String(20), default=UserRole.client)
+    role: Mapped[UserRole] = mapped_column(SAEnum(UserRole, create_type=False), default=UserRole.client)
     rating: Mapped[float] = mapped_column(Float, default=5.0)
     deals_completed: Mapped[int] = mapped_column(Integer, default=0)
     promo_deals_used: Mapped[int] = mapped_column(Integer, default=0)
@@ -78,7 +79,7 @@ class Vehicle(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
-    type: Mapped[VehicleType] = mapped_column(String(20), nullable=False)
+    type: Mapped[VehicleType] = mapped_column(SAEnum(VehicleType, create_type=False), nullable=False)
     make_model: Mapped[str] = mapped_column(String(128), nullable=False)
     license_plate: Mapped[str] = mapped_column(String(20), nullable=False)
     capacity_kg: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -93,7 +94,7 @@ class Order(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     customer_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
     driver_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True)
-    type: Mapped[OrderType] = mapped_column(String(20), nullable=False)
+    type: Mapped[OrderType] = mapped_column(SAEnum(OrderType, create_type=False), nullable=False)
     from_text: Mapped[str] = mapped_column(String(256), nullable=False)
     to_text: Mapped[str] = mapped_column(String(256), nullable=False)
     from_lat: Mapped[float] = mapped_column(Float, nullable=False)
@@ -105,7 +106,9 @@ class Order(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     road_distance_km: Mapped[float | None] = mapped_column(Float, nullable=True)
     route_geometry: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[OrderStatus] = mapped_column(String(20), default=OrderStatus.new)
+    status: Mapped[OrderStatus] = mapped_column(
+        SAEnum(OrderStatus, create_type=False), default=OrderStatus.new
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     customer: Mapped["User"] = relationship(foreign_keys=[customer_id], back_populates="orders")
@@ -120,7 +123,9 @@ class Bid(Base):
     order_id: Mapped[int] = mapped_column(Integer, ForeignKey("orders.id"), nullable=False)
     driver_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
     proposed_price: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[BidStatus] = mapped_column(String(20), default=BidStatus.pending)
+    status: Mapped[BidStatus] = mapped_column(
+        SAEnum(BidStatus, create_type=False), default=BidStatus.pending
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     order: Mapped["Order"] = relationship(back_populates="bids")

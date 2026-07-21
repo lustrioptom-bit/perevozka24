@@ -6,9 +6,32 @@ from fastapi.requests import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from webapp.routers.api import router as api_router
-import os, time
+import os, logging
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Perevozka24 API")
+
+
+@app.on_event("startup")
+async def ensure_enum_values():
+    try:
+        import psycopg2
+        from config import settings
+        db_url = settings.DATABASE_URL
+        if db_url.startswith("postgresql+asyncpg://"):
+            db_url = "postgresql://" + db_url[len("postgresql+asyncpg://"):]
+        elif db_url.startswith("postgresql+psycopg://"):
+            db_url = "postgresql://" + db_url[len("postgresql+psycopg://"):]
+        conn = psycopg2.connect(db_url)
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute("DO $$ BEGIN ALTER TYPE orderstatus ADD VALUE IF NOT EXISTS 'in_transit'; EXCEPTION WHEN undefined_object THEN NULL; WHEN duplicate_object THEN NULL; END $$")
+        cur.close()
+        conn.close()
+        logger.info("Ensured in_transit enum value exists")
+    except Exception as e:
+        logger.warning("Could not ensure enum values: %s", e)
 
 
 class NoCacheMiddleware(BaseHTTPMiddleware):

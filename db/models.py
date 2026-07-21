@@ -106,6 +106,9 @@ class Order(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     road_distance_km: Mapped[float | None] = mapped_column(Float, nullable=True)
     route_geometry: Mapped[str | None] = mapped_column(Text, nullable=True)
+    driver_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    driver_lng: Mapped[float | None] = mapped_column(Float, nullable=True)
+    driver_location_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[OrderStatus] = mapped_column(
         SAEnum(OrderStatus, create_type=False), default=OrderStatus.new
     )

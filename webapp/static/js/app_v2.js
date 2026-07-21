@@ -27,6 +27,12 @@ const state = {
     orders: [],
     map: null,
     markers: [],
+    trackingOrderId: null,
+    trackingWatchId: null,
+    trackingInterval: null,
+    trackingMap: null,
+    trackingMarker: null,
+    trackingRefreshId: null,
 };
 
 console.log('WebApp init, userId:', state.userId);
@@ -214,6 +220,14 @@ async function loadMyOrders() {
         }
         if (!isCustomer && (o.status === 'active' || o.status === 'in_transit')) {
             html += '<button class="btn btn-success btn-sm" onclick="completeOrder(' + o.id + ')">Выполнено</button>';
+        }
+        if (!isCustomer && o.status === 'in_transit') {
+            var isTracking = state.trackingOrderId === o.id;
+            html += '<button class="btn btn-sm" style="background:#8b5cf6;color:#fff" onclick="toggleDriverTracking(' + o.id + ')">' +
+                (isTracking ? 'Остановить' : 'Передаватьlocation') + '</button>';
+        }
+        if (isCustomer && o.status === 'in_transit' && o.driver_lat) {
+            html += '<button class="btn btn-sm" style="background:#8b5cf6;color:#fff" onclick="openTrackingMap(' + o.id + ')">&#128506; На карте</button>';
         }
         if (isCustomer && o.status === 'completed') {
             html += '<button class="btn btn-primary btn-sm" onclick="openRateModal(' + o.id + ')">Оценить</button>';
@@ -523,6 +537,8 @@ async function loadExistingBids(orderId) {
 }
 
 function closeBidModal() {
+    if (state.trackingRefreshId) { clearInterval(state.trackingRefreshId); state.trackingRefreshId = null; }
+    if (state.trackingMap) { state.trackingMap.remove(); state.trackingMap = null; state.trackingMarker = null; }
     document.getElementById('bid-modal').classList.remove('show');
 }
 
@@ -711,4 +727,85 @@ async function setRole(role) {
     await api('/user/role', { method: 'POST', body: { role: role } });
     state.user.role = role;
     renderProfile();
+}
+
+// ─── Location Tracking ───
+
+function toggleDriverTracking(orderId) {
+    if (state.trackingOrderId === orderId) {
+        stopDriverTracking();
+        return;
+    }
+    if (state.trackingOrderId) stopDriverTracking();
+    state.trackingOrderId = orderId;
+    if (!navigator.geolocation) { showAlert('Геолокация недоступна'); return; }
+    state.trackingWatchId = navigator.geolocation.watchPosition(
+        function(pos) {
+            var lat = pos.coords.latitude;
+            var lng = pos.coords.longitude;
+            api('/orders/' + orderId + '/location', { method: 'POST', body: { lat: lat, lng: lng } });
+        },
+        function(err) { console.error('Geo error:', err); },
+        { enableHighAccuracy: true, maximumAge: 5000 }
+    );
+    showAlert('Местоположение передаётся');
+    if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+    loadMyOrders();
+}
+
+function stopDriverTracking() {
+    if (state.trackingWatchId !== null) {
+        navigator.geolocation.clearWatch(state.trackingWatchId);
+        state.trackingWatchId = null;
+    }
+    state.trackingOrderId = null;
+    showAlert('Передача местоположения остановлена');
+    loadMyOrders();
+}
+
+function openTrackingMap(orderId) {
+    var modal = document.getElementById('bid-modal');
+    var body = document.getElementById('bid-modal-body');
+    body.innerHTML =
+        '<h3>Водитель на карте</h3>' +
+        '<div id="tracking-map" style="height:350px;border-radius:8px;margin:12px 0"></div>' +
+        '<div id="tracking-info" style="font-size:12px;color:var(--tg-text-secondary);text-align:center;margin-bottom:8px">Загрузка...</div>' +
+        '<button class="btn btn-outline" style="width:100%" onclick="closeTrackingMap()">Закрыть</button>';
+    modal.classList.add('show');
+
+    var loadTracking = function() {
+        api('/orders/' + orderId + '/location').then(function(loc) {
+            if (!loc || loc.error) {
+                document.getElementById('tracking-info').textContent = loc === null ? '' : 'Ожидание位置...';
+                return;
+            }
+            if (!state.trackingMap) {
+                state.trackingMap = L.map('tracking-map').setView([loc.lat, loc.lng], 13);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap'
+                }).addTo(state.trackingMap);
+                var carIcon = L.divIcon({
+                    className: '',
+                    html: '<div style="background:#8b5cf6;border:3px solid #fff;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.4);color:#fff;font-size:18px">&#128663;</div>',
+                    iconSize: [32, 32], iconAnchor: [16, 16]
+                });
+                state.trackingMarker = L.marker([loc.lat, loc.lng], {icon: carIcon}).addTo(state.trackingMap);
+                state.trackingMap.invalidateSize();
+            } else {
+                state.trackingMarker.setLatLng([loc.lat, loc.lng]);
+                state.trackingMap.panTo([loc.lat, loc.lng]);
+            }
+            var updated = loc.updated_at ? new Date(loc.updated_at).toLocaleTimeString('ru-RU') : '';
+            document.getElementById('tracking-info').textContent = 'Обновлено: ' + updated;
+        });
+    };
+
+    loadTracking();
+    state.trackingRefreshId = setInterval(loadTracking, 5000);
+}
+
+function closeTrackingMap() {
+    if (state.trackingRefreshId) { clearInterval(state.trackingRefreshId); state.trackingRefreshId = null; }
+    if (state.trackingMap) { state.trackingMap.remove(); state.trackingMap = null; state.trackingMarker = null; }
+    closeBidModal();
 }

@@ -417,7 +417,7 @@ async def order_in_transit(order_id: int, request: Request, session: AsyncSessio
         from aiogram import Bot
         from config import settings
         bot = Bot(token=settings.BOT_TOKEN)
-        await bot.send_message(order.customer_id, f"Водитель выехал по заказу #{order.id}!")
+        await bot.send_message(order.customer_id, f"Водитель выехал по заказу #{order.id}! Отслеживайте местоположение в приложении.")
         await bot.session.close()
     except Exception:
         pass
@@ -481,6 +481,48 @@ async def cancel_order(order_id: int, request: Request, session: AsyncSession = 
     return {"ok": True}
 
 
+@router.post("/orders/{order_id}/location")
+async def update_driver_location(order_id: int, request: Request, session: AsyncSession = Depends(get_session)):
+    user_id = _get_user_id(request)
+    body = await request.json()
+    lat = body.get("lat")
+    lng = body.get("lng")
+    if lat is None or lng is None:
+        return {"error": "missing_coords"}
+
+    result = await session.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        return {"error": "not_found"}
+    if order.driver_id != user_id:
+        return {"error": "forbidden"}
+    if order.status != OrderStatus.in_transit:
+        return {"error": "wrong_status"}
+
+    from datetime import datetime
+    order.driver_lat = float(lat)
+    order.driver_lng = float(lng)
+    order.driver_location_updated_at = datetime.utcnow()
+    await session.commit()
+    return {"ok": True}
+
+
+@router.get("/orders/{order_id}/location")
+async def get_driver_location(order_id: int, session: AsyncSession = Depends(get_session)):
+    result = await session.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        return {"error": "not_found"}
+    if order.driver_lat is None or order.driver_lng is None:
+        return {"error": "no_location"}
+    return {
+        "lat": order.driver_lat,
+        "lng": order.driver_lng,
+        "updated_at": order.driver_location_updated_at.isoformat() if order.driver_location_updated_at else None,
+        "driver_id": order.driver_id,
+    }
+
+
 @router.post("/orders/{order_id}/rate")
 async def rate_order(order_id: int, body: RatingSubmit, request: Request, session: AsyncSession = Depends(get_session)):
     user_id = _get_user_id(request)
@@ -535,7 +577,7 @@ async def api_geocode(address: str):
 # ─── Helpers ───
 
 def _order_to_dict(o: Order) -> dict:
-    return {
+    d = {
         "id": o.id,
         "customer_id": o.customer_id,
         "driver_id": o.driver_id,
@@ -551,9 +593,13 @@ def _order_to_dict(o: Order) -> dict:
         "description": o.description,
         "road_distance_km": o.road_distance_km,
         "route_geometry": o.route_geometry,
+        "driver_lat": o.driver_lat,
+        "driver_lng": o.driver_lng,
+        "driver_location_updated_at": o.driver_location_updated_at.isoformat() if o.driver_location_updated_at else None,
         "status": o.status.value,
         "created_at": o.created_at.isoformat(),
     }
+    return d
 
 
 def _get_webapp_url() -> str:

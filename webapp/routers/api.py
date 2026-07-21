@@ -593,12 +593,17 @@ def _order_to_dict(o: Order) -> dict:
         "description": o.description,
         "road_distance_km": o.road_distance_km,
         "route_geometry": o.route_geometry,
-        "driver_lat": o.driver_lat,
-        "driver_lng": o.driver_lng,
-        "driver_location_updated_at": o.driver_location_updated_at.isoformat() if o.driver_location_updated_at else None,
         "status": o.status.value,
         "created_at": o.created_at.isoformat(),
     }
+    try:
+        d["driver_lat"] = o.driver_lat
+        d["driver_lng"] = o.driver_lng
+        d["driver_location_updated_at"] = o.driver_location_updated_at.isoformat() if o.driver_location_updated_at else None
+    except Exception:
+        d["driver_lat"] = None
+        d["driver_lng"] = None
+        d["driver_location_updated_at"] = None
     return d
 
 

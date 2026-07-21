@@ -14,9 +14,9 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("orders", sa.Column("driver_lat", sa.Float(), nullable=True))
-    op.add_column("orders", sa.Column("driver_lng", sa.Float(), nullable=True))
-    op.add_column("orders", sa.Column("driver_location_updated_at", sa.DateTime(), nullable=True))
+    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_lat DOUBLE PRECISION")
+    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_lng DOUBLE PRECISION")
+    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_location_updated_at TIMESTAMP")
 
 
 def downgrade() -> None:

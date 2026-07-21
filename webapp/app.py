@@ -14,7 +14,7 @@ app = FastAPI(title="Perevozka24 API")
 
 
 @app.on_event("startup")
-async def ensure_enum_values():
+async def ensure_db():
     try:
         import psycopg2
         from config import settings
@@ -27,11 +27,13 @@ async def ensure_enum_values():
         conn.autocommit = True
         cur = conn.cursor()
         cur.execute("DO $$ BEGIN ALTER TYPE orderstatus ADD VALUE IF NOT EXISTS 'in_transit'; EXCEPTION WHEN undefined_object THEN NULL; WHEN duplicate_object THEN NULL; END $$")
+        for col, typ in [("driver_lat", "DOUBLE PRECISION"), ("driver_lng", "DOUBLE PRECISION"), ("driver_location_updated_at", "TIMESTAMP")]:
+            cur.execute(f"ALTER TABLE orders ADD COLUMN IF NOT EXISTS {col} {typ}")
         cur.close()
         conn.close()
-        logger.info("Ensured in_transit enum value exists")
+        logger.info("Ensured DB schema")
     except Exception as e:
-        logger.warning("Could not ensure enum values: %s", e)
+        logger.warning("Could not ensure DB schema: %s", e)
 
 
 class NoCacheMiddleware(BaseHTTPMiddleware):

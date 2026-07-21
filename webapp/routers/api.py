@@ -472,7 +472,7 @@ async def rate_order(order_id: int, body: RatingSubmit, request: Request, sessio
         return {"error": "not_found"}
     if order.customer_id != user_id:
         return {"error": "forbidden"}
-    if not order.driver_id:
+    if order.driver_id is None:
         return {"error": "no_driver"}
     if order.status != OrderStatus.completed:
         return {"error": "not_completed"}

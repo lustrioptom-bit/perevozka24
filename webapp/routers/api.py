@@ -21,6 +21,7 @@ def _get_user_id(request: Request) -> int:
 
 @router.get("/user/{user_id}")
 async def get_user(user_id: int, session: AsyncSession = Depends(get_session)):
+    from config import settings
     result = await session.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -38,6 +39,7 @@ async def get_user(user_id: int, session: AsyncSession = Depends(get_session)):
         "rating": user.rating,
         "deals_completed": user.deals_completed,
         "promo_deals_used": user.promo_deals_used,
+        "is_admin": user_id in settings.ADMIN_IDS,
     }
 
 
@@ -572,6 +574,40 @@ async def api_geocode(address: str):
     if result:
         return {"lat": result[0], "lng": result[1]}
     return {"error": "not_found"}
+
+
+@router.get("/admin/users")
+async def admin_list_users(request: Request, session: AsyncSession = Depends(get_session)):
+    from config import settings
+    user_id = _get_user_id(request)
+    if user_id not in settings.ADMIN_IDS:
+        return {"error": "forbidden"}
+
+    result = await session.execute(
+        select(User).order_by(User.created_at.desc()).limit(200)
+    )
+    users = result.scalars().all()
+
+    role_labels = {"client": "Клиент", "driver": "Водитель", "both": "Оба"}
+    out = []
+    for u in users:
+        vehicle = (await session.execute(
+            select(Vehicle).where(Vehicle.user_id == u.id).limit(1)
+        )).scalar_one_or_none()
+        out.append({
+            "id": u.id,
+            "username": u.username,
+            "full_name": u.full_name,
+            "phone": u.phone,
+            "role": u.role.value,
+            "role_label": role_labels.get(u.role.value, u.role.value),
+            "rating": u.rating,
+            "deals_completed": u.deals_completed,
+            "vehicle": vehicle.make_model if vehicle else None,
+            "plate": vehicle.license_plate if vehicle else None,
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+        })
+    return out
 
 
 # ─── Helpers ───

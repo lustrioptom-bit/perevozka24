@@ -640,9 +640,23 @@ function renderProfile() {
                 '3. После принятия свяжитесь с клиентом' +
             '</div>' +
         '</div>' +
-        '<div id="vehicles-container"></div>';
+        '<div id="vehicles-container"></div>' +
+        (isAdmin() ?
+        '<div style="margin-top:16px;border:1px solid var(--tg-border);border-radius:12px;overflow:hidden">' +
+            '<div onclick="toggleAdminPanel()" style="padding:12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;background:var(--tg-bg-secondary)">' +
+                '<span style="font-weight:600;font-size:14px">Панель админа</span>' +
+                '<span style="font-size:12px;color:var(--tg-text-secondary)">&#9660;</span>' +
+            '</div>' +
+            '<div id="admin-panel" style="display:none;padding:8px">' +
+                '<div id="admin-users-list"><div class="loading">Загрузка...</div></div>' +
+            '</div>' +
+        '</div>' : '');
 
     loadVehicles();
+}
+
+function isAdmin() {
+    return state.user && state.user.is_admin;
 }
 
 async function savePhone() {
@@ -727,6 +741,53 @@ async function setRole(role) {
     await api('/user/role', { method: 'POST', body: { role: role } });
     state.user.role = role;
     renderProfile();
+}
+
+// ─── Admin Panel ───
+
+var ADMIN_IDS_RAW = '';
+async function loadAdminUsers() {
+    var users = await api('/admin/users');
+    var container = document.getElementById('admin-users-list');
+    if (!users || users.error) {
+        container.innerHTML = '<div style="padding:8px;color:var(--tg-text-secondary)">Нет данных</div>';
+        return;
+    }
+    if (!Array.isArray(users) || !users.length) {
+        container.innerHTML = '<div style="padding:8px;color:var(--tg-text-secondary)">Нет пользователей</div>';
+        return;
+    }
+    var html = '<div style="font-size:12px;color:var(--tg-text-secondary);margin-bottom:8px">Всего: ' + users.length + '</div>';
+    users.forEach(function(u) {
+        var roleColor = u.role === 'driver' ? '#22c55e' : u.role === 'both' ? '#8b5cf6' : '#3b82f6';
+        html += '<div style="background:var(--tg-bg-secondary);border-radius:8px;padding:10px;margin-bottom:6px">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center">' +
+                '<div>' +
+                    '<div style="font-weight:600;font-size:13px">' + esc(u.full_name || u.username || 'ID ' + u.id) + '</div>' +
+                    (u.username ? '<div style="font-size:11px;color:var(--tg-text-secondary)">@' + esc(u.username) + '</div>' : '') +
+                    '<div style="font-size:11px;color:var(--tg-text-secondary)">ID: ' + u.id + '</div>' +
+                '</div>' +
+                '<div style="text-align:right">' +
+                    '<div style="background:' + roleColor + ';color:#fff;font-size:11px;padding:2px 8px;border-radius:4px;display:inline-block">' + esc(u.role_label) + '</div>' +
+                    '<div style="font-size:11px;margin-top:4px"><span style="color:var(--tg-warning)">&#9733;</span> ' + u.rating.toFixed(1) + ' | ' + u.deals_completed + ' сделок</div>' +
+                '</div>' +
+            '</div>' +
+            (u.phone ? '<div style="font-size:11px;color:var(--tg-text-secondary);margin-top:4px">' + esc(u.phone) + '</div>' : '') +
+            (u.vehicle ? '<div style="font-size:11px;color:var(--tg-text-secondary)">' + esc(u.vehicle) + ' (' + esc(u.plate) + ')</div>' : '') +
+            (u.created_at ? '<div style="font-size:10px;color:var(--tg-text-secondary);margin-top:2px">Рег: ' + new Date(u.created_at).toLocaleDateString('ru-RU') + '</div>' : '') +
+        '</div>';
+    });
+    container.innerHTML = html;
+}
+
+function toggleAdminPanel() {
+    var panel = document.getElementById('admin-panel');
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        loadAdminUsers();
+    } else {
+        panel.style.display = 'none';
+    }
 }
 
 // ─── Location Tracking ───

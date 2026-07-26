@@ -33,6 +33,11 @@ const state = {
     trackingMap: null,
     trackingMarker: null,
     trackingRefreshId: null,
+    createMap: null,
+    createFromMarker: null,
+    createToMarker: null,
+    createRouteLine: null,
+    createDraft: null,
 };
 
 console.log('WebApp init, userId:', state.userId);
@@ -442,14 +447,80 @@ async function submitOrder() {
 
     if (!fromGeo || !toGeo) { showAlert('Не удалось определить координаты. Укажите город точнее.'); return; }
 
+    state.createDraft = {
+        type: createType, from_text: from, to_text: to,
+        from_lat: fromGeo.lat, from_lng: fromGeo.lng,
+        to_lat: toGeo.lat, to_lng: toGeo.lng,
+        date_time: new Date(dateVal).toISOString(),
+        price: price, description: desc || null,
+    };
+
+    showCreateMapPreview();
+}
+
+function showCreateMapPreview() {
+    var d = state.createDraft;
+    var preview = document.getElementById('create-map-preview');
+    preview.style.display = 'block';
+
+    if (state.createMap) { state.createMap.remove(); state.createMap = null; }
+
+    var midLat = (d.from_lat + d.to_lat) / 2;
+    var midLng = (d.from_lng + d.to_lng) / 2;
+
+    state.createMap = L.map('create-map').setView([midLat, midLng], 10);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap'
+    }).addTo(state.createMap);
+
+    setTimeout(function() { state.createMap.invalidateSize(); }, 100);
+
+    var fromIcon = L.divIcon({
+        className: '',
+        html: '<div style="background:#22c55e;border:3px solid #fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.4);color:#fff;font-size:14px;font-weight:700">А</div>',
+        iconSize: [28, 28], iconAnchor: [14, 14]
+    });
+    var toIcon = L.divIcon({
+        className: '',
+        html: '<div style="background:#ef4444;border:3px solid #fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.4);color:#fff;font-size:14px;font-weight:700">Б</div>',
+        iconSize: [28, 28], iconAnchor: [14, 14]
+    });
+
+    state.createFromMarker = L.marker([d.from_lat, d.from_lng], {icon: fromIcon, draggable: true}).addTo(state.createMap);
+    state.createToMarker = L.marker([d.to_lat, d.to_lng], {icon: toIcon, draggable: true}).addTo(state.createMap);
+
+    var bounds = L.latLngBounds([d.from_lat, d.from_lng], [d.to_lat, d.to_lng]);
+    state.createMap.fitBounds(bounds, {padding: [40, 40]});
+
+    state.createRouteLine = L.polyline([[d.from_lat, d.from_lng], [d.to_lat, d.to_lng]], {
+        color: '#3b82f6', weight: 3, opacity: 0.7, dashArray: '8, 6'
+    }).addTo(state.createMap);
+}
+
+function confirmCreateOrder() {
+    var d = state.createDraft;
+    var fromPos = state.createFromMarker.getLatLng();
+    var toPos = state.createToMarker.getLatLng();
+    d.from_lat = fromPos.lat;
+    d.from_lng = fromPos.lng;
+    d.to_lat = toPos.lat;
+    d.to_lng = toPos.lng;
+
+    cancelCreateMap();
+    doCreateOrder(d);
+}
+
+async function doCreateOrder(d) {
+    showAlert('Создаём заказ...');
+
     var result = await api('/orders', {
         method: 'POST',
         body: {
-            type: createType, from_text: from, to_text: to,
-            from_lat: fromGeo.lat, from_lng: fromGeo.lng,
-            to_lat: toGeo.lat, to_lng: toGeo.lng,
-            date_time: new Date(dateVal).toISOString(),
-            price: price, description: desc || null,
+            type: d.type, from_text: d.from_text, to_text: d.to_text,
+            from_lat: d.from_lat, from_lng: d.from_lng,
+            to_lat: d.to_lat, to_lng: d.to_lng,
+            date_time: d.date_time,
+            price: d.price, description: d.description,
         },
     });
 
@@ -457,10 +528,20 @@ async function submitOrder() {
         if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
         showAlert('Заказ создан!');
         document.getElementById('create-form').reset();
+        state.createDraft = null;
         switchTab('feed');
     } else {
         showAlert('Ошибка: ' + (result?.error || 'неизвестная'));
     }
+}
+
+function cancelCreateMap() {
+    if (state.createMap) { state.createMap.remove(); state.createMap = null; }
+    state.createFromMarker = null;
+    state.createToMarker = null;
+    state.createRouteLine = null;
+    state.createDraft = null;
+    document.getElementById('create-map-preview').style.display = 'none';
 }
 
 async function geocode(address) {

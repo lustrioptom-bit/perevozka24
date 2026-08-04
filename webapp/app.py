@@ -1,12 +1,12 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.requests import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from webapp.routers.api import router as api_router
-import os, logging
+import os, logging, asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,28 @@ async def ensure_db():
         logger.info("Ensured DB schema")
     except Exception as e:
         logger.warning("Could not ensure DB schema: %s", e)
+
+
+@app.on_event("startup")
+async def start_self_ping():
+    async def keep_alive():
+        from config import settings
+        import httpx
+        url = settings.PUBLIC_URL.rstrip("/") + "/health"
+        while True:
+            await asyncio.sleep(240)
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    resp = await client.get(url)
+                    logger.info("Self-ping %s -> %s", url, resp.status_code)
+            except Exception as e:
+                logger.warning("Self-ping failed: %s", e)
+    asyncio.create_task(keep_alive())
+
+
+@app.get("/health", response_class=PlainTextResponse)
+async def health():
+    return "ok"
 
 
 class NoCacheMiddleware(BaseHTTPMiddleware):

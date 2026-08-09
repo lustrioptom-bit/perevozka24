@@ -176,7 +176,12 @@ async def orders_feed(
     type_filter: str | None = None,
     session: AsyncSession = Depends(get_session),
 ):
-    query = select(Order).where(Order.status == OrderStatus.new)
+    from datetime import datetime, timedelta
+    cutoff = datetime.utcnow() - timedelta(hours=24)
+    query = select(Order).where(
+        Order.status == OrderStatus.new,
+        Order.date_time >= cutoff,
+    )
     if type_filter in ("passenger", "freight"):
         query = query.where(Order.type == OrderType(type_filter))
     query = query.order_by(Order.created_at.desc()).limit(50)

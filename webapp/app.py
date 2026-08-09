@@ -53,6 +53,36 @@ async def start_self_ping():
     asyncio.create_task(keep_alive())
 
 
+@app.on_event("startup")
+async def start_stale_order_cleanup():
+    from datetime import datetime, timedelta
+    from sqlalchemy import select, update
+    from db.engine import async_session
+    from db.models import Order, OrderStatus
+
+    async def cleanup():
+        while True:
+            await asyncio.sleep(3600)
+            try:
+                cutoff = datetime.utcnow() - timedelta(hours=24)
+                async with async_session() as session:
+                    result = await session.execute(
+                        update(Order)
+                        .where(
+                            Order.date_time < cutoff,
+                            Order.status.in_([OrderStatus.new, OrderStatus.active]),
+                        )
+                        .values(status=OrderStatus.cancelled)
+                    )
+                    await session.commit()
+                    if result.rowcount:
+                        logger.info("Cancelled %s stale orders", result.rowcount)
+            except Exception as e:
+                logger.warning("Stale order cleanup failed: %s", e)
+
+    asyncio.create_task(cleanup())
+
+
 @app.get("/health", response_class=PlainTextResponse)
 async def health():
     return "ok"

@@ -73,7 +73,7 @@ async def cmd_help(message: Message):
         "2. Во вкладке «Лента заказов» найдите подходящий заказ\n"
         "3. Нажмите «Откликнуться» и предложите цену\n"
         "4. После принятия — свяжитесь с клиентом\n\n"
-        f"Лента заказов: {settings.CHANNEL_ID}",
+        f"Лента заказов: <a href=\"{settings.CHANNEL_LINK}\">@perevozkauakh</a>",
         reply_markup=get_help_keyboard(url),
         parse_mode="HTML",
     )

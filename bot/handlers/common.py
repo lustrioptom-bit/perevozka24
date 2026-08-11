@@ -3,7 +3,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command
 
 from config import settings
-from bot.keyboards.inline import get_start_keyboard, get_help_keyboard
+from bot.keyboards.inline import get_start_keyboard, get_help_keyboard, get_share_keyboard
 from bot.utils.helpers import get_or_create_user, get_admin_stats, COMPLETED_DEALS_PROMO_LIMIT
 
 router = Router()
@@ -41,6 +41,18 @@ async def cmd_start(message: Message, session):
         "— Выбираете лучшее предложение и едете!\n\n"
         f"<b>Акция:</b> первые {COMPLETED_DEALS_PROMO_LIMIT} сделок — бесплатно!",
         reply_markup=get_start_keyboard(url),
+        parse_mode="HTML",
+    )
+
+
+@router.message(Command("share"))
+async def cmd_share(message: Message):
+    await message.answer(
+        "Поделитесь ботом с друзьями и коллегами:\n\n"
+        "— пассажиры найдут попутчиков и перевозчиков\n"
+        "— водители получат доступ к ленте заказов\n\n"
+        "Спасибо за поддержку!",
+        reply_markup=get_share_keyboard(),
         parse_mode="HTML",
     )
 

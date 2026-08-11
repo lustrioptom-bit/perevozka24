@@ -22,8 +22,8 @@ class Settings(BaseSettings):
     @property
     def WEBAPP_BASE_URL(self) -> str:
         if self.PUBLIC_URL:
-            return self.PUBLIC_URL.rstrip("/")
-        return f"http://{self.WEBAPP_HOST}:{self.WEBAPP_PORT}"
+            return self.PUBLIC_URL.rstrip("/") + "/app"
+        return f"http://{self.WEBAPP_HOST}:{self.WEBAPP_PORT}/app"
 
 
 settings = Settings()

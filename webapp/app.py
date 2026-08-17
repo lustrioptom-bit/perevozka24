@@ -29,6 +29,14 @@ async def ensure_db():
         cur.execute("DO $$ BEGIN ALTER TYPE orderstatus ADD VALUE IF NOT EXISTS 'in_transit'; EXCEPTION WHEN undefined_object THEN NULL; WHEN duplicate_object THEN NULL; END $$")
         for col, typ in [("driver_lat", "DOUBLE PRECISION"), ("driver_lng", "DOUBLE PRECISION"), ("driver_location_updated_at", "TIMESTAMP")]:
             cur.execute(f"ALTER TABLE orders ADD COLUMN IF NOT EXISTS {col} {typ}")
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS route_subscriptions (
+                id SERIAL PRIMARY KEY,
+                route VARCHAR(64) NOT NULL,
+                username VARCHAR(128) NOT NULL,
+                created_at TIMESTAMP DEFAULT now()
+            )
+        """)
         cur.close()
         conn.close()
         logger.info("Ensured DB schema")
@@ -43,7 +51,7 @@ async def start_self_ping():
         import httpx
         url = settings.PUBLIC_URL.rstrip("/") + "/health"
         while True:
-            await asyncio.sleep(240)
+            await asyncio.sleep(180)
             try:
                 async with httpx.AsyncClient(timeout=30) as client:
                     resp = await client.get(url)

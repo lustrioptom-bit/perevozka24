@@ -32,6 +32,35 @@ async def cmd_start(message: Message, session):
         )
         return
 
+    if payload == "driver":
+        await message.answer(
+            f"Привет, {message.from_user.first_name}!\n\n"
+            "<b>Perevozka24</b> — платформа для водителей.\n\n"
+            "<b>Как начать:</b>\n"
+            "— Откройте приложение\n"
+            "— Смотрите ленту заказов на карте\n"
+            "— Откликайтесь с ценой и зарабатывайте!\n\n"
+            f"До <b>{COMPLETED_DEALS_PROMO_LIMIT}</b> сделок — 0% комиссии!",
+            reply_markup=get_start_keyboard(url),
+            parse_mode="HTML",
+        )
+        return
+
+    if payload == "client":
+        await message.answer(
+            f"Привет, {message.from_user.first_name}!\n\n"
+            "<b>Perevozka24</b> — платформа для поиска попутчиков и грузоперевозок.\n\n"
+            "<b>Как создать заказ:</b>\n"
+            "— Откройте приложение\n"
+            "— Укажите маршрут, дату и бюджет\n"
+            "— Получите предложения от водителей\n"
+            "— Выберите лучшее и поезжайте!\n\n"
+            f"До <b>{COMPLETED_DEALS_PROMO_LIMIT}</b> сделок — 0% комиссии!",
+            reply_markup=get_start_keyboard(url),
+            parse_mode="HTML",
+        )
+        return
+
     await message.answer(
         f"Привет, {message.from_user.first_name}!\n\n"
         "<b>Perevozka24</b> — платформа для поиска попутчиков и грузоперевозок.\n\n"

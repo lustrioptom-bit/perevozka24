@@ -133,3 +133,12 @@ class Bid(Base):
 
     order: Mapped["Order"] = relationship(back_populates="bids")
     driver: Mapped["User"] = relationship(back_populates="bids")
+
+
+class RouteSubscription(Base):
+    __tablename__ = "route_subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    route: Mapped[str] = mapped_column(String(64), nullable=False)
+    username: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

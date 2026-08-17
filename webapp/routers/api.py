@@ -659,3 +659,25 @@ async def _ensure_user(session: AsyncSession, user_id: int) -> None:
         user = User(id=user_id)
         session.add(user)
         await session.commit()
+
+
+@router.post("/subscribe-route")
+async def subscribe_route(request: Request, session: AsyncSession = Depends(get_session)):
+    from db.models import RouteSubscription
+    body = await request.json()
+    route = (body.get("route") or "").strip()[:64]
+    username = (body.get("username") or "").strip().lstrip("@")[:128]
+    if not route or not username:
+        return {"ok": False, "error": "Missing route or username"}
+    existing = await session.execute(
+        select(RouteSubscription).where(
+            RouteSubscription.route == route,
+            RouteSubscription.username == username,
+        )
+    )
+    if existing.scalar_one_or_none():
+        return {"ok": True}
+    sub = RouteSubscription(route=route, username=username)
+    session.add(sub)
+    await session.commit()
+    return {"ok": True}

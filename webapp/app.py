@@ -18,11 +18,7 @@ async def ensure_db():
     try:
         import psycopg2
         from config import settings
-        db_url = settings.DATABASE_URL
-        if db_url.startswith("postgresql+asyncpg://"):
-            db_url = "postgresql://" + db_url[len("postgresql+asyncpg://"):]
-        elif db_url.startswith("postgresql+psycopg://"):
-            db_url = "postgresql://" + db_url[len("postgresql+psycopg://"):]
+        db_url = settings.DATABASE_URL_SYNC
         conn = psycopg2.connect(db_url)
         conn.autocommit = True
         cur = conn.cursor()

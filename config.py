@@ -1,6 +1,14 @@
 from pydantic_settings import BaseSettings
 
 
+def _db_host(url: str) -> str:
+    try:
+        rest = url.split("@", 1)[1]
+        return rest.split("/", 1)[0].split(":", 1)[0].split("?")[0].lower()
+    except IndexError:
+        return ""
+
+
 class Settings(BaseSettings):
     BOT_TOKEN: str = ""
     ADMIN_IDS_RAW: str = ""
@@ -26,6 +34,48 @@ class Settings(BaseSettings):
         if not self.ADMIN_IDS_RAW:
             return []
         return [int(x.strip()) for x in self.ADMIN_IDS_RAW.split(",") if x.strip()]
+
+    @property
+    def DATABASE_URL_ASYNC(self) -> str:
+        """URL for SQLAlchemy + asyncpg (Neon/Supabase/Render compatible, adds ssl=require)."""
+        url = self.DATABASE_URL.strip()
+        if not url:
+            return url
+        if url.startswith("postgres://"):
+            url = "postgresql://" + url[len("postgres://"):]
+        if url.startswith("postgresql+psycopg://") or url.startswith("postgresql+psycopg2://"):
+            url = "postgresql://" + url.split("://", 1)[1]
+        if url.startswith("postgresql://"):
+            url = "postgresql+asyncpg://" + url[len("postgresql://"):]
+        host = _db_host(url)
+        if host and host not in ("localhost", "127.0.0.1", "::1"):
+            if "sslmode=" in url:
+                url = url.replace("sslmode=", "ssl=")
+            elif "ssl=" not in url:
+                sep = "&" if "?" in url else "?"
+                url += f"{sep}ssl=require"
+        return url
+
+    @property
+    def DATABASE_URL_SYNC(self) -> str:
+        """URL for psycopg2 / libpq (plain postgresql:// with sslmode=require)."""
+        url = self.DATABASE_URL.strip()
+        if not url:
+            return url
+        if url.startswith("postgres://"):
+            url = "postgresql://" + url[len("postgres://"):]
+        for prefix in ("postgresql+asyncpg://", "postgresql+psycopg://", "postgresql+psycopg2://"):
+            if url.startswith(prefix):
+                url = "postgresql://" + url[len(prefix):]
+                break
+        host = _db_host(url)
+        if host and host not in ("localhost", "127.0.0.1", "::1"):
+            if "ssl=" in url and "sslmode=" not in url:
+                url = url.replace("ssl=", "sslmode=", 1)
+            elif "sslmode=" not in url and "ssl=" not in url:
+                sep = "&" if "?" in url else "?"
+                url += f"{sep}sslmode=require"
+        return url
 
     @property
     def WEBAPP_BASE_URL(self) -> str:

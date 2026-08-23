@@ -18,10 +18,13 @@ async def ensure_db():
     try:
         import psycopg2
         from config import settings
+        from db.bootstrap import ensure_enum_statements
         db_url = settings.DATABASE_URL_SYNC
         conn = psycopg2.connect(db_url)
         conn.autocommit = True
         cur = conn.cursor()
+        for stmt in ensure_enum_statements():
+            cur.execute(stmt)
         cur.execute("DO $$ BEGIN ALTER TYPE orderstatus ADD VALUE IF NOT EXISTS 'in_transit'; EXCEPTION WHEN undefined_object THEN NULL; WHEN duplicate_object THEN NULL; END $$")
         for col, typ in [("driver_lat", "DOUBLE PRECISION"), ("driver_lng", "DOUBLE PRECISION"), ("driver_location_updated_at", "TIMESTAMP")]:
             cur.execute(f"ALTER TABLE orders ADD COLUMN IF NOT EXISTS {col} {typ}")

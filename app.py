@@ -15,7 +15,12 @@ from db.engine import engine, Base
 
 
 async def on_startup():
+    from sqlalchemy import text
+    from db.bootstrap import ensure_enum_statements
+
     async with engine.begin() as conn:
+        for stmt in ensure_enum_statements():
+            await conn.execute(text(stmt))
         await conn.run_sync(Base.metadata.create_all)
 
 

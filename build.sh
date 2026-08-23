@@ -3,10 +3,13 @@ echo "Running Alembic migrations..."
 alembic upgrade head 2>&1 || echo "Alembic failed, trying raw SQL..."
 python -c "
 from config import settings
+from db.bootstrap import ensure_enum_statements
 import psycopg2
 conn = psycopg2.connect(settings.DATABASE_URL_SYNC)
 conn.autocommit = True
 cur = conn.cursor()
+for stmt in ensure_enum_statements():
+    cur.execute(stmt)
 for col, typ in [('driver_lat','DOUBLE PRECISION'),('driver_lng','DOUBLE PRECISION'),('driver_location_updated_at','TIMESTAMP')]:
     cur.execute(f\"ALTER TABLE orders ADD COLUMN IF NOT EXISTS {col} {typ}\")
 cur.execute('''CREATE TABLE IF NOT EXISTS route_subscriptions (

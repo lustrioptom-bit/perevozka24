@@ -1,7 +1,7 @@
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import User, Order, OrderStatus, OrderType, UserRole
+from db.models import User, Order, OrderStatus
 
 
 COMPLETED_DEALS_PROMO_LIMIT = 150
@@ -35,27 +35,3 @@ async def get_admin_stats(session: AsyncSession) -> dict:
     ).scalar() or 0
     completed_deals = (await session.execute(select(func.count(Order.id)).where(Order.status == OrderStatus.completed))).scalar() or 0
     return {"total_users": total_users, "active_orders": active_orders, "completed_deals": completed_deals}
-
-
-async def notify_drivers_new_order(session: AsyncSession, order: Order, bot, webapp_url: str) -> None:
-    from bot.keyboards.inline import get_order_notification_keyboard
-
-    type_label = "Груз" if order.type == OrderType.freight else "Пассажиры"
-    result = await session.execute(select(User).where(User.role.in_([UserRole.driver, UserRole.both])))
-    drivers = result.scalars().all()
-    for driver in drivers:
-        if driver.id == order.customer_id:
-            continue
-        try:
-            await bot.send_message(
-                driver.id,
-                f"Новый заказ #{order.id}\n"
-                f"{type_label}\n"
-                f"{order.from_text} \u2192 {order.to_text}\n"
-                f"{order.date_time.strftime('%d.%m.%Y %H:%M')}\n"
-                f"{order.price} \u20b4\n"
-                f"{order.description or 'Без описания'}",
-                reply_markup=get_order_notification_keyboard(webapp_url, order.id),
-            )
-        except Exception:
-            pass

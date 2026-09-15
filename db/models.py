@@ -11,6 +11,7 @@ from sqlalchemy import (
     Text,
     Float,
     DateTime,
+    Boolean,
     Enum as SAEnum,
     func,
 )
@@ -51,17 +52,40 @@ class BidStatus(str, enum.Enum):
     rejected = "rejected"
 
 
+class DriverLevel(str, enum.Enum):
+    novice = "novice"
+    verified = "verified"
+    pro = "pro"
+    expert = "expert"
+
+
+class NotifFrequency(str, enum.Enum):
+    instant = "instant"
+    hourly = "hourly"
+    daily = "daily"
+
+
+class NotificationType(str, enum.Enum):
+    new_order = "new_order"
+    selected = "selected"
+    cancelled = "cancelled"
+    completed = "completed"
+
+
 class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     username: Mapped[str | None] = mapped_column(String(128), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    phone_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     full_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     role: Mapped[UserRole] = mapped_column(SAEnum(UserRole, create_type=False), default=UserRole.client)
     rating: Mapped[float] = mapped_column(Float, default=5.0)
+    rating_count: Mapped[int] = mapped_column(Integer, default=0)
     deals_completed: Mapped[int] = mapped_column(Integer, default=0)
     promo_deals_used: Mapped[int] = mapped_column(Integer, default=0)
+    driver_level: Mapped[DriverLevel] = mapped_column(SAEnum(DriverLevel, create_type=False), default=DriverLevel.novice)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     vehicles: Mapped[list["Vehicle"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -133,6 +157,49 @@ class Bid(Base):
 
     order: Mapped["Order"] = relationship(back_populates="bids")
     driver: Mapped["User"] = relationship(back_populates="bids")
+
+
+class DriverPreference(Base):
+    __tablename__ = "driver_preferences"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    driver_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), unique=True, nullable=False)
+    order_types: Mapped[str] = mapped_column(String(20), default="both")
+    cities: Mapped[str] = mapped_column(Text, default="[]")
+    radius_km: Mapped[int] = mapped_column(Integer, default=50)
+    frequency: Mapped[NotifFrequency] = mapped_column(
+        SAEnum(NotifFrequency, create_type=False), default=NotifFrequency.instant
+    )
+    last_notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    notif_count_this_hour: Mapped[int] = mapped_column(Integer, default=0)
+    notif_hour_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_active_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class Review(Base):
+    __tablename__ = "reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    order_id: Mapped[int] = mapped_column(Integer, ForeignKey("orders.id"), nullable=False)
+    reviewer_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
+    reviewee_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
+    order_id: Mapped[int] = mapped_column(Integer, ForeignKey("orders.id"), nullable=False)
+    type: Mapped[NotificationType] = mapped_column(
+        SAEnum(NotificationType, create_type=False), default=NotificationType.new_order
+    )
+    sent: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class RouteSubscription(Base):

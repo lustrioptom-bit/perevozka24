@@ -4,6 +4,9 @@ ENUM_TYPES = [
     ("ordertype", ["passenger", "freight"]),
     ("orderstatus", ["new", "active", "in_transit", "completed", "cancelled"]),
     ("bidstatus", ["pending", "accepted", "rejected"]),
+    ("driverlevel", ["novice", "verified", "pro", "expert"]),
+    ("notiffrequency", ["instant", "hourly", "daily"]),
+    ("notificationtype", ["new_order", "selected", "cancelled", "completed"]),
 ]
 
 

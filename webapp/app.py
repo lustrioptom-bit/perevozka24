@@ -28,6 +28,48 @@ async def ensure_db():
         cur.execute("DO $$ BEGIN ALTER TYPE orderstatus ADD VALUE IF NOT EXISTS 'in_transit'; EXCEPTION WHEN undefined_object THEN NULL; WHEN duplicate_object THEN NULL; END $$")
         for col, typ in [("driver_lat", "DOUBLE PRECISION"), ("driver_lng", "DOUBLE PRECISION"), ("driver_location_updated_at", "TIMESTAMP")]:
             cur.execute(f"ALTER TABLE orders ADD COLUMN IF NOT EXISTS {col} {typ}")
+        for col, ddl in [
+            ("phone_verified", "BOOLEAN DEFAULT FALSE"),
+            ("rating_count", "INTEGER DEFAULT 0"),
+            ("driver_level", "VARCHAR(16) DEFAULT 'novice'"),
+        ]:
+            cur.execute(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} {ddl}")
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS driver_preferences (
+                id SERIAL PRIMARY KEY,
+                driver_id BIGINT UNIQUE REFERENCES users(id),
+                order_types VARCHAR(20) DEFAULT 'both',
+                cities TEXT DEFAULT '[]',
+                radius_km INTEGER DEFAULT 50,
+                frequency VARCHAR(16) DEFAULT 'instant',
+                last_notified_at TIMESTAMP,
+                notif_count_this_hour INTEGER DEFAULT 0,
+                notif_hour_start TIMESTAMP,
+                last_active_at TIMESTAMP
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS reviews (
+                id SERIAL PRIMARY KEY,
+                order_id INTEGER REFERENCES orders(id),
+                reviewer_id BIGINT REFERENCES users(id),
+                reviewee_id BIGINT REFERENCES users(id),
+                rating INTEGER NOT NULL,
+                comment TEXT,
+                reason TEXT,
+                created_at TIMESTAMP DEFAULT now()
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS notifications (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT REFERENCES users(id),
+                order_id INTEGER REFERENCES orders(id),
+                type VARCHAR(16) DEFAULT 'new_order',
+                sent BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT now()
+            )
+        """)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS route_subscriptions (
                 id SERIAL PRIMARY KEY,
@@ -58,6 +100,30 @@ async def start_self_ping():
             except Exception as e:
                 logger.warning("Self-ping failed: %s", e)
     asyncio.create_task(keep_alive())
+
+
+@app.on_event("startup")
+async def start_notification_digest():
+    from datetime import datetime
+    from aiogram import Bot
+    from config import settings
+    from bot.utils.notifications import send_hourly_digest, send_daily_digest
+
+    async def digest_loop():
+        webapp_url = settings.WEBAPP_BASE_URL
+        while True:
+            await asyncio.sleep(3600)
+            try:
+                bot = Bot(token=settings.BOT_TOKEN)
+                await send_hourly_digest(bot, webapp_url)
+                hour = datetime.utcnow().hour
+                if hour in (6, 7):
+                    await send_daily_digest(bot, webapp_url)
+                await bot.session.close()
+            except Exception as e:
+                logger.warning("Digest failed: %s", e)
+
+    asyncio.create_task(digest_loop())
 
 
 @app.on_event("startup")

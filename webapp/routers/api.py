@@ -63,6 +63,7 @@ async def update_phone(body: PhoneUpdate, request: Request, session: AsyncSessio
     if not user:
         return {"error": "not_found"}
     user.phone = body.phone
+    user.phone_verified = bool(body.phone and any(body.phone.lstrip("+").startswith(p) for p in ("380", "38")))
     await session.commit()
     return {"ok": True}
 
@@ -158,7 +159,7 @@ async def create_order(body: OrderCreate, request: Request, session: AsyncSessio
         logging.getLogger(__name__).error("Channel post failed: %s", e, exc_info=True)
 
     try:
-        from bot.utils.helpers import notify_drivers_new_order
+        from bot.utils.notifications import notify_drivers_new_order
         from aiogram import Bot
         from config import settings
         bot = Bot(token=settings.BOT_TOKEN)
@@ -463,8 +464,41 @@ async def complete_order(order_id: int, request: Request, session: AsyncSession 
     try:
         from aiogram import Bot
         from config import settings
+        from bot.utils.helpers import get_or_create_user
         bot = Bot(token=settings.BOT_TOKEN)
-        await bot.send_message(order.customer_id, f"Заказ #{order.id} выполнен! Оцените водителя в приложении.")
+
+        customer_display = (customer.full_name or customer.username or str(customer.id)) if customer else "клиент"
+        if order.driver_id:
+            from bot.handlers.reviews import request_review
+            driver_display = (driver.full_name or driver.username or str(driver.id)) if driver else str(order.driver_id)
+            try:
+                await request_review(bot, order.id, order.customer_id, order.driver_id, driver_display)
+            except Exception:
+                pass
+            try:
+                await request_review(bot, order.id, order.driver_id, order.customer_id, customer_display)
+            except Exception:
+                pass
+
+        if driver is not None:
+            from bot.utils.levels import get_level_info
+            from db.models import DriverLevel
+            cur, nxt = get_level_info(driver.deals_completed)
+            if cur and cur["key"] != (driver.driver_level.value if hasattr(driver.driver_level, "value") else str(driver.driver_level or "")):
+                driver.driver_level = DriverLevel(cur["key"])
+                await session.commit()
+                try:
+                    await bot.send_message(
+                        driver.id,
+                        f"Поздравляем!\n\n"
+                        f"Ты достиг уровня \"{cur['name']}\" {cur['icon']}\n\n"
+                        f"Твои бонусы:\n{cur['bonus']}\n\n"
+                        f"Продолжай в том же духе!",
+                    )
+                except Exception:
+                    pass
+
+        await bot.send_message(order.customer_id, f"Заказ #{order.id} выполнен! Оцени поездку, чтобы оставить отзыв.")
         await bot.session.close()
     except Exception:
         pass

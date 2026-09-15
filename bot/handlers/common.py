@@ -3,8 +3,9 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command
 
 from config import settings
-from bot.keyboards.inline import get_start_keyboard, get_help_keyboard, get_share_keyboard
+from bot.keyboards.inline import get_start_keyboard, get_help_keyboard, get_share_keyboard, prefs_main_keyboard
 from bot.utils.helpers import get_or_create_user, get_admin_stats, COMPLETED_DEALS_PROMO_LIMIT
+from db.models import UserRole
 
 router = Router()
 
@@ -33,6 +34,13 @@ async def cmd_start(message: Message, session):
         return
 
     if payload == "driver":
+        if user.role == UserRole.client:
+            user.role = UserRole.driver
+        elif user.role == UserRole.both:
+            pass
+        else:
+            user.role = UserRole.driver
+        await session.commit()
         await message.answer(
             f"Привет, {message.from_user.first_name}!\n\n"
             "<b>Perevozka24</b> — платформа для водителей.\n\n"
@@ -40,13 +48,21 @@ async def cmd_start(message: Message, session):
             "— Откройте приложение\n"
             "— Смотрите ленту заказов на карте\n"
             "— Откликайтесь с ценой и зарабатывайте!\n\n"
-            f"До <b>{COMPLETED_DEALS_PROMO_LIMIT}</b> сделок — 0% комиссии!",
-            reply_markup=get_start_keyboard(url),
+            f"До <b>{COMPLETED_DEALS_PROMO_LIMIT}</b> сделок — 0% комиссии!\n\n"
+            "<b>Настройте уведомления о новых заказах:</b>",
+            reply_markup=prefs_main_keyboard(),
             parse_mode="HTML",
         )
         return
 
     if payload == "client":
+        if user.role == UserRole.driver:
+            user.role = UserRole.both
+        elif user.role == UserRole.client:
+            pass
+        else:
+            user.role = UserRole.both
+        await session.commit()
         await message.answer(
             f"Привет, {message.from_user.first_name}!\n\n"
             "<b>Perevozka24</b> — платформа для поиска попутчиков и грузоперевозок.\n\n"

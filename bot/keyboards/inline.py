@@ -52,13 +52,13 @@ def get_order_notification_keyboard(webapp_url: str, order_id: int) -> InlineKey
     )
 
 
-def get_bid_notification_keyboard(webapp_url: str, order_id: int) -> InlineKeyboardMarkup:
+def get_bid_notification_keyboard(webapp_url: str, order_id: int, user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text="Выбрать водителя",
-                    web_app={"url": f"{webapp_url}?startapp=order_{order_id}"},
+                    web_app={"url": f"{webapp_url}?startapp=order_{order_id}&user_id={user_id}"},
                 )
             ]
         ]
@@ -81,7 +81,7 @@ def get_channel_keyboard(order_id: int, webapp_url: str, bot_username: str = "pe
 
 # ─── Notification buttons (new order) ───
 
-def get_notification_actions_keyboard(webapp_url: str, order_id: int) -> InlineKeyboardMarkup:
+def get_notification_actions_keyboard(webapp_url: str, order_id: int, user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -101,7 +101,7 @@ def get_notification_actions_keyboard(webapp_url: str, order_id: int) -> InlineK
             [
                 InlineKeyboardButton(
                     text="Открыть в приложении",
-                    web_app={"url": f"{webapp_url}?startapp=order_{order_id}"},
+                    web_app={"url": f"{webapp_url}?startapp=order_{order_id}&user_id={user_id}"},
                 )
             ],
         ]
@@ -124,10 +124,10 @@ def get_bid_price_keyboard(order_id: int, budget: int) -> InlineKeyboardMarkup:
     )
 
 
-def get_feed_keyboard(webapp_url: str) -> InlineKeyboardMarkup:
+def get_feed_keyboard(webapp_url: str, user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Открыть ленту заказов", web_app={"url": webapp_url})],
+            [InlineKeyboardButton(text="Открыть ленту заказов", web_app={"url": f"{webapp_url}?user_id={user_id}"})],
         ]
     )
 

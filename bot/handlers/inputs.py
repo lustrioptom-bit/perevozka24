@@ -128,7 +128,7 @@ async def _create_bid(session, driver_id: int, order_id: int, price: int) -> tup
             order.customer_id,
             f"Водитель {_user_display(driver)} (рейтинг: {driver.rating:.1f}) "
             f"предложил {price} грн за заказ #{order_id}.",
-            reply_markup=get_bid_notification_keyboard(settings.WEBAPP_BASE_URL, order_id),
+            reply_markup=get_bid_notification_keyboard(settings.WEBAPP_BASE_URL, order_id, order.customer_id),
         )
         await bot.session.close()
     except Exception:

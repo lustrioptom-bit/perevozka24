@@ -194,7 +194,7 @@ async def _send_order_card(
     await bot.send_message(
         driver_id,
         build_order_card_text(order, customer),
-        reply_markup=get_notification_actions_keyboard(webapp_url, order.id),
+        reply_markup=get_notification_actions_keyboard(webapp_url, order.id, driver_id),
     )
 
 
@@ -205,7 +205,7 @@ async def _send_digest_message(bot: Bot, webapp_url: str, user_id: int, count: i
         f"За последнее время появилось {count} новых заказов по твоим интересам.\n"
         f"Открой ленту заказов:"
     )
-    await bot.send_message(user_id, text, reply_markup=get_feed_keyboard(webapp_url))
+    await bot.send_message(user_id, text, reply_markup=get_feed_keyboard(webapp_url, user_id))
 
 
 async def send_hourly_digest(bot: Bot, webapp_url: str) -> None:

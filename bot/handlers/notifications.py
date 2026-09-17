@@ -103,7 +103,7 @@ async def notif_back(call: CallbackQuery, session):
     from bot.utils.notifications import build_order_card_text
     await call.message.edit_text(
         build_order_card_text(order, customer),
-        reply_markup=get_notification_actions_keyboard(settings.WEBAPP_BASE_URL, order_id),
+        reply_markup=get_notification_actions_keyboard(settings.WEBAPP_BASE_URL, order_id, call.from_user.id),
     )
     await call.answer()
 

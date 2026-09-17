@@ -160,7 +160,7 @@ async def start_stale_order_cleanup():
 
 @app.get("/health", response_class=PlainTextResponse)
 async def health():
-    return "ok"
+    return "ok|nav"
 
 
 class NoCacheMiddleware(BaseHTTPMiddleware):

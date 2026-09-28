@@ -170,6 +170,12 @@ async def start_stale_order_cleanup():
     _cleanup_tasks.append(asyncio.create_task(cleanup()))
 
 
+@app.on_event("startup")
+async def start_channel_events_import():
+    from webapp.services.events_import import start_channel_events_import as _start_import
+    _start_import()
+
+
 @app.get("/health", response_class=PlainTextResponse)
 async def health():
     return "ok|nav"

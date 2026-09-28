@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     WEBAPP_HOST: str = "0.0.0.0"
     WEBAPP_PORT: int = 8000
     PUBLIC_URL: str = ""
+    CHANNEL_IMPORT_SOURCES_RAW: str = ""
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
@@ -34,6 +35,12 @@ class Settings(BaseSettings):
         if not self.ADMIN_IDS_RAW:
             return []
         return [int(x.strip()) for x in self.ADMIN_IDS_RAW.split(",") if x.strip()]
+
+    @property
+    def CHANNEL_IMPORT_SOURCES(self) -> list[str]:
+        if not self.CHANNEL_IMPORT_SOURCES_RAW:
+            return []
+        return [x.strip().lstrip("@").lower() for x in self.CHANNEL_IMPORT_SOURCES_RAW.split(",") if x.strip()]
 
     @property
     def DATABASE_URL_ASYNC(self) -> str:

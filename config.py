@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     WEBAPP_HOST: str = "0.0.0.0"
     WEBAPP_PORT: int = 8000
     PUBLIC_URL: str = ""
-    CHANNEL_IMPORT_SOURCES_RAW: str = ""
+    CHANNEL_IMPORT_SOURCES_RAW: str = "HaxepTCK"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

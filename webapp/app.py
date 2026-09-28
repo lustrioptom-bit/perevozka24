@@ -197,8 +197,9 @@ async def health():
         )
     else:
         run = "|last:never"
+    geo = f"|d:{st['geo_detail']}" if st.get("geo_detail") else ""
     err = f"|err:{st['last_error']}" if st.get("last_error") else ""
-    return f"ok|nav|imp:{status}{run}{err}"
+    return f"ok|nav|imp:{status}{run}{geo}{err}"
 
 
 class NoCacheMiddleware(BaseHTTPMiddleware):

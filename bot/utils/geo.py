@@ -49,6 +49,17 @@ def _lookup_city(address: str) -> tuple[float, float] | None:
     return None
 
 
+GEO_STATS = {"ok": 0, "rate_limited": 0, "http_other": 0, "exc": 0}
+
+
+def geo_stats_snapshot() -> dict:
+    return dict(GEO_STATS)
+
+
+def _geo_stats_delta(before: dict) -> dict:
+    return {k: GEO_STATS[k] - before.get(k, 0) for k in GEO_STATS}
+
+
 async def _nominatim_geocode(address: str, _max_attempts: int = 2) -> tuple[float, float] | None:
     import httpx
 
@@ -63,13 +74,17 @@ async def _nominatim_geocode(address: str, _max_attempts: int = 2) -> tuple[floa
                 if resp.status_code == 200:
                     data = resp.json()
                     if data:
+                        GEO_STATS["ok"] += 1
                         return float(data[0]["lat"]), float(data[0]["lon"])
                     return None
                 if resp.status_code == 429:
+                    GEO_STATS["rate_limited"] += 1
                     await asyncio.sleep(2 * (attempt + 1))
                     continue
+                GEO_STATS["http_other"] += 1
                 return None
         except Exception:
+            GEO_STATS["exc"] += 1
             await asyncio.sleep(1)
     return None
 

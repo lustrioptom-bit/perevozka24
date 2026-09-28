@@ -8,7 +8,7 @@ import httpx
 from sqlalchemy import delete, select
 
 from config import settings
-from bot.utils.geo import _nominatim_geocode, haversine
+from bot.utils.geo import _nominatim_geocode, geo_stats_snapshot, _geo_stats_delta, haversine
 from db.engine import async_session
 from db.models import GeocodeCache, MapEvent, User, UserRole
 from webapp.routers.api import MAP_EVENT_TTL_HOURS
@@ -243,6 +243,7 @@ async def _run_cycle(username: str) -> None:
 
         stats = {"geocoded": 0, "cache_hits": 0}
         inserted = 0
+        geo_before = geo_stats_snapshot()
         for cleaned, event_type in candidates:
             for address in _address_candidates(cleaned):
                 coords = await _cached_geocode(session, address, now, stats)
@@ -278,6 +279,8 @@ async def _run_cycle(username: str) -> None:
             last_inserted=inserted,
             last_error=None,
         )
+        delta = _geo_stats_delta(geo_before)
+        import_state["geo_detail"] = f"ok:{delta['ok']}|429:{delta['rate_limited']}|http:{delta['http_other']}|exc:{delta['exc']}"
 
 
 async def _import_loop() -> None:

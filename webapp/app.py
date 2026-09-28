@@ -90,6 +90,15 @@ async def ensure_db():
                 expires_at TIMESTAMP NOT NULL
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS geo_cache (
+                address VARCHAR(256) PRIMARY KEY,
+                lat DOUBLE PRECISION,
+                lng DOUBLE PRECISION,
+                created_at TIMESTAMP DEFAULT now(),
+                last_try TIMESTAMP DEFAULT now()
+            )
+        """)
         cur.close()
         conn.close()
         logger.info("Ensured DB schema")
@@ -182,7 +191,10 @@ async def health():
     st = events_import.import_state
     status = "on" if st["enabled"] else "off"
     if st["last_run"]:
-        run = f"|last:{st['last_run']}|ins:{st['last_inserted']}"
+        run = (
+            f"|last:{st['last_run']}|cand:{st['last_candidates']}"
+            f"|geo:{st['last_geocoded']}|ins:{st['last_inserted']}"
+        )
     else:
         run = "|last:never"
     err = f"|err:{st['last_error']}" if st.get("last_error") else ""

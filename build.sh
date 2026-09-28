@@ -72,6 +72,13 @@ cur.execute('''CREATE TABLE IF NOT EXISTS map_events (
     created_at TIMESTAMP DEFAULT now(),
     expires_at TIMESTAMP NOT NULL
 )''')
+cur.execute('''CREATE TABLE IF NOT EXISTS geo_cache (
+    address VARCHAR(256) PRIMARY KEY,
+    lat DOUBLE PRECISION,
+    lng DOUBLE PRECISION,
+    created_at TIMESTAMP DEFAULT now(),
+    last_try TIMESTAMP DEFAULT now()
+)''')
 cur.close()
 conn.close()
 print('Ensured enum types, columns and tables')

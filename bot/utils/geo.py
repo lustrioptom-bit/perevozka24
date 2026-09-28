@@ -49,10 +49,10 @@ def _lookup_city(address: str) -> tuple[float, float] | None:
     return None
 
 
-async def _nominatim_geocode(address: str) -> tuple[float, float] | None:
+async def _nominatim_geocode(address: str, _max_attempts: int = 2) -> tuple[float, float] | None:
     import httpx
 
-    for attempt in range(2):
+    for attempt in range(_max_attempts):
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(

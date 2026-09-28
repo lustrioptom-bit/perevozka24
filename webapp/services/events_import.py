@@ -5,22 +5,32 @@ import re
 from datetime import datetime, timedelta
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from config import settings
 from bot.utils.geo import _nominatim_geocode, haversine
 from db.engine import async_session
-from db.models import MapEvent, User, UserRole
+from db.models import GeocodeCache, MapEvent, User, UserRole
 from webapp.routers.api import MAP_EVENT_TTL_HOURS
 
 logger = logging.getLogger(__name__)
 
-import_state = {"enabled": False, "sources": [], "last_run": None, "last_inserted": 0, "last_error": None}
+import_state = {
+    "enabled": False,
+    "sources": [],
+    "last_run": None,
+    "last_candidates": 0,
+    "last_geocoded": 0,
+    "last_inserted": 0,
+    "last_error": None,
+}
 
 FETCH_INTERVAL_SECONDS = 300
-MAX_GEOCODES_PER_CYCLE = 24
+MAX_GEOCODES_PER_CYCLE = 10
 DEDUP_DISTANCE_KM = 0.4
-NOMINATIM_PAUSE = 1.2
+NOMINATIM_PAUSE = 1.5
+CACHE_TTL = timedelta(days=7)
+NEGATIVE_CACHE_TTL = timedelta(hours=3)
 
 _STREET_LEXEME_RE = re.compile(
     r"\b(?:улица|ул\.|бульвар|проспект|пр-т|переулок|пер\.|площадь|пл\.|набережная|шоссе|проезд)\b",
@@ -140,6 +150,54 @@ def _candidate_lines(messages: list[str]) -> list[tuple[str, str]]:
     return out
 
 
+async def _geocode_with_backoff(query: str, stats: dict) -> tuple[float, float] | None:
+    for attempt in range(3):
+        coords = await _nominatim_geocode(query, _max_attempts=1)
+        stats["geocoded"] += 1
+        if coords:
+            return coords
+        await asyncio.sleep(NOMINATIM_PAUSE * (attempt + 1))
+    return None
+
+
+async def _cached_geocode(session, address: str, now: datetime, stats: dict) -> tuple[float, float] | None:
+    row = (
+        await session.execute(
+            select(GeocodeCache).where(GeocodeCache.address == address[:256])
+        )
+    ).scalar_one_or_none()
+    if row:
+        cached_ts = row.created_at or row.last_try
+        if row.lat is not None and (now - cached_ts) < CACHE_TTL:
+            stats["cache_hits"] += 1
+            return row.lat, row.lng
+        if row.lat is None and (now - cached_ts) < NEGATIVE_CACHE_TTL:
+            return None
+    if stats["geocoded"] >= MAX_GEOCODES_PER_CYCLE:
+        return None
+    coords = None
+    for query in _formulations(address):
+        coords = await _geocode_with_backoff(query, stats)
+        if stats["geocoded"] >= MAX_GEOCODES_PER_CYCLE:
+            break
+        if coords:
+            break
+    if row:
+        row.lat = coords[0] if coords else None
+        row.lng = coords[1] if coords else None
+        row.last_try = now
+    else:
+        session.add(
+            GeocodeCache(
+                address=address[:256],
+                lat=coords[0] if coords else None,
+                lng=coords[1] if coords else None,
+                last_try=now,
+            )
+        )
+    return coords
+
+
 async def _run_cycle(username: str) -> None:
     messages = await _fetch_channel_messages(username)
     if not messages:
@@ -148,10 +206,18 @@ async def _run_cycle(username: str) -> None:
     candidates = _candidate_lines(messages)
     logger.info("[import:%s] %d candidate lines", username, len(candidates))
     if not candidates:
-        import_state.update(last_run=datetime.utcnow().isoformat(), last_inserted=0, last_error=None)
+        import_state.update(
+            last_run=datetime.utcnow().isoformat(),
+            last_candidates=0,
+            last_geocoded=0,
+            last_inserted=0,
+            last_error=None,
+        )
         return
 
     async with async_session() as session:
+        purge = datetime.utcnow() - timedelta(days=14)
+        await session.execute(delete(GeocodeCache).where(GeocodeCache.last_try < purge))
         admins = settings.ADMIN_IDS
         if not admins:
             logger.warning("[import] no ADMIN_IDS configured, skip")
@@ -175,27 +241,12 @@ async def _run_cycle(username: str) -> None:
             (await session.execute(select(MapEvent).where(MapEvent.expires_at > now))).scalars().all()
         )
 
-        geocoded = 0
+        stats = {"geocoded": 0, "cache_hits": 0}
         inserted = 0
-        geo_cache: dict[str, tuple[float, float] | None] = {}
         for cleaned, event_type in candidates:
-            placed = False
             for address in _address_candidates(cleaned):
-                if address not in geo_cache:
-                    if geocoded >= MAX_GEOCODES_PER_CYCLE:
-                        break
-                    result = None
-                    for query in _formulations(address):
-                        if geocoded:
-                            await asyncio.sleep(NOMINATIM_PAUSE)
-                        coords = await _nominatim_geocode(query)
-                        geocoded += 1
-                        if coords:
-                            result = coords
-                            break
-                    geo_cache[address] = result
-                coords = geo_cache[address]
-                if placed or not coords:
+                coords = await _cached_geocode(session, address, now, stats)
+                if not coords:
                     continue
                 lat, lng = coords
                 duplicate = any(
@@ -217,14 +268,15 @@ async def _run_cycle(username: str) -> None:
                     )
                 )
                 inserted += 1
-                placed = True
                 break
-            if placed:
-                continue
         await session.commit()
-        logger.info("[import:%s] geocoded %d, inserted %d", username, geocoded, inserted)
+        logger.info("[import:%s] inserted %d", username, inserted)
         import_state.update(
-            last_run=datetime.utcnow().isoformat(), last_inserted=inserted, last_error=None
+            last_run=datetime.utcnow().isoformat(),
+            last_candidates=len(candidates),
+            last_geocoded=stats["geocoded"],
+            last_inserted=inserted,
+            last_error=None,
         )
 
 

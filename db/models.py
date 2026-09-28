@@ -222,3 +222,13 @@ class MapEvent(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class GeocodeCache(Base):
+    __tablename__ = "geo_cache"
+
+    address: Mapped[str] = mapped_column(String(256), primary_key=True)
+    lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lng: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_try: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)

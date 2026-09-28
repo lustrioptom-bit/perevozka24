@@ -78,6 +78,18 @@ async def ensure_db():
                 created_at TIMESTAMP DEFAULT now()
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS map_events (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT REFERENCES users(id),
+                lat DOUBLE PRECISION NOT NULL,
+                lng DOUBLE PRECISION NOT NULL,
+                event_type VARCHAR(16) NOT NULL,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT now(),
+                expires_at TIMESTAMP NOT NULL
+            )
+        """)
         cur.close()
         conn.close()
         logger.info("Ensured DB schema")

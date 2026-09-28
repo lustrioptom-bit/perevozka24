@@ -55,3 +55,10 @@ class RoleUpdate(BaseModel):
 
 class PhoneUpdate(BaseModel):
     phone: str
+
+
+class MapEventCreate(BaseModel):
+    lat: float
+    lng: float
+    event_type: str
+    description: str | None = None

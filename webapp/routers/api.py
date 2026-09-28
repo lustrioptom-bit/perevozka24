@@ -3,9 +3,9 @@ from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.engine import get_session
-from db.models import User, Order, Bid, Vehicle, OrderStatus, OrderType, BidStatus, UserRole
+from db.models import User, Order, Bid, Vehicle, OrderStatus, OrderType, BidStatus, UserRole, MapEvent
 from webapp.routers.schemas import (
-    OrderCreate, BidCreate, BidResponse, RatingSubmit, VehicleCreate, RoleUpdate, PhoneUpdate,
+    OrderCreate, BidCreate, BidResponse, RatingSubmit, VehicleCreate, RoleUpdate, PhoneUpdate, MapEventCreate,
 )
 from bot.utils.geo import haversine, geocode_address, get_road_route
 from bot.utils.helpers import COMPLETED_DEALS_PROMO_LIMIT
@@ -713,5 +713,101 @@ async def subscribe_route(request: Request, session: AsyncSession = Depends(get_
         return {"ok": True}
     sub = RouteSubscription(route=route, username=username)
     session.add(sub)
+    await session.commit()
+    return {"ok": True}
+
+
+# ─── Map events (crowdsourced, like KharkovTraffic) ───
+
+MAP_EVENT_TYPES = ("dsn", "accident", "traffic", "road", "other")
+MAP_EVENT_TTL_HOURS = 4
+
+
+def _event_to_dict(e: MapEvent) -> dict:
+    from datetime import datetime
+    now = datetime.utcnow()
+    minutes_left = max(0, int((e.expires_at - now).total_seconds() // 60))
+    result = {
+        "id": e.id,
+        "user_id": e.user_id,
+        "event_type": e.event_type,
+        "description": e.description,
+        "lat": e.lat,
+        "lng": e.lng,
+        "minutes_left": minutes_left,
+    }
+    if e.created_at:
+        result["created_at"] = e.created_at.isoformat()
+    if e.expires_at:
+        result["expires_at"] = e.expires_at.isoformat()
+    return result
+
+
+@router.get("/map/events")
+async def map_events(
+    lat: float,
+    lng: float,
+    radius: float = 150.0,
+    session: AsyncSession = Depends(get_session),
+):
+    from datetime import datetime
+    now = datetime.utcnow()
+    result = await session.execute(select(MapEvent).where(MapEvent.expires_at > now))
+    events = result.scalars().all()
+    out = []
+    for e in events:
+        dist = haversine(lat, lng, e.lat, e.lng)
+        if dist > radius:
+            continue
+        d = _event_to_dict(e)
+        d["distance_km"] = round(dist, 1)
+        out.append(d)
+    out.sort(key=lambda x: x["expires_at"])
+    return out
+
+
+@router.post("/map/events")
+async def create_map_event(
+    body: MapEventCreate,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    from datetime import datetime, timedelta
+    user_id = _get_user_id(request)
+    if not user_id:
+        return {"ok": False, "error": "auth_required"}
+    if body.event_type not in MAP_EVENT_TYPES:
+        return {"ok": False, "error": "invalid_event_type"}
+    if not (-90 <= body.lat <= 90) or not (-180 <= body.lng <= 180):
+        return {"ok": False, "error": "invalid_coords"}
+    await _ensure_user(session, user_id)
+    ev = MapEvent(
+        user_id=user_id,
+        lat=body.lat,
+        lng=body.lng,
+        event_type=body.event_type,
+        description=(body.description or "").strip()[:500] or None,
+        expires_at=datetime.utcnow() + timedelta(hours=MAP_EVENT_TTL_HOURS),
+    )
+    session.add(ev)
+    await session.commit()
+    await session.refresh(ev)
+    return {"ok": True, "event": _event_to_dict(ev)}
+
+
+@router.delete("/map/events/{event_id}")
+async def delete_map_event(
+    event_id: int,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    user_id = _get_user_id(request)
+    result = await session.execute(select(MapEvent).where(MapEvent.id == event_id))
+    ev = result.scalar_one_or_none()
+    if not ev:
+        return {"ok": False, "error": "not_found"}
+    if ev.user_id != user_id:
+        return {"ok": False, "error": "forbidden"}
+    await session.delete(ev)
     await session.commit()
     return {"ok": True}

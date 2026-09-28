@@ -27,6 +27,12 @@ const state = {
     orders: [],
     map: null,
     markers: [],
+    eventLayer: null,
+    eventRefreshId: null,
+    eventAddMode: false,
+    eventType: 'accident',
+    eventMarker: null,
+    eventClickHandler: null,
     trackingOrderId: null,
     trackingWatchId: null,
     trackingInterval: null,
@@ -316,6 +322,7 @@ function initMap() {
     if (state.map) {
         state.map.invalidateSize();
         loadMapOrders();
+        loadMapEvents();
         return;
     }
     if (!navigator.geolocation) { initMapFallback(); return; }
@@ -339,6 +346,14 @@ function initMapAt(lat, lng) {
     state.userLng = lng;
     setTimeout(function() { state.map.invalidateSize(); }, 200);
     loadMapOrders();
+    loadMapEvents();
+    if (!state.eventRefreshId) {
+        state.eventRefreshId = setInterval(function() {
+            if (state.currentTab === 'map' && state.map && !state.eventAddMode) {
+                loadMapEvents();
+            }
+        }, 60000);
+    }
 }
 
 function haversineKm(lat1, lng1, lat2, lng2) {
@@ -951,4 +966,140 @@ function closeTrackingMap() {
     if (state.trackingRefreshId) { clearInterval(state.trackingRefreshId); state.trackingRefreshId = null; }
     if (state.trackingMap) { state.trackingMap.remove(); state.trackingMap = null; state.trackingMarker = null; }
     closeBidModal();
+}
+
+// ─── Map events (crowdsourced, like KharkovTraffic) ───
+
+var EVENT_TYPES = [
+    { key: 'dsn',      label: 'ДСН/ЧС', color: '#ef4444' },
+    { key: 'accident', label: 'Авария', color: '#f97316' },
+    { key: 'traffic',  label: 'Пробка', color: '#f59e0b' },
+    { key: 'road',     label: 'Дорога', color: '#3b82f6' },
+    { key: 'other',    label: 'Другое', color: '#71717a' },
+];
+
+function evTypeInfo(key) {
+    for (var i = 0; i < EVENT_TYPES.length; i++) {
+        if (EVENT_TYPES[i].key === key) return EVENT_TYPES[i];
+    }
+    return EVENT_TYPES[4];
+}
+
+async function loadMapEvents() {
+    if (!state.userLat || !state.map) return;
+    if (!state.eventLayer) {
+        state.eventLayer = L.layerGroup().addTo(state.map);
+    }
+    var events = await api('/map/events?lat=' + state.userLat + '&lng=' + state.userLng + '&radius=300');
+    state.eventLayer.clearLayers();
+    if (!Array.isArray(events) || !events.length) return;
+    events.forEach(function(ev) {
+        var info = evTypeInfo(ev.event_type);
+        var circle = L.circleMarker([ev.lat, ev.lng], {
+            radius: 9,
+            color: '#ffffff',
+            weight: 2,
+            fillColor: info.color,
+            fillOpacity: 0.95
+        }).addTo(state.eventLayer);
+
+        var popup = '<div style="min-width:160px">' +
+            '<div style="font-size:11px;color:#666;margin-bottom:2px">✦ ' + info.label + '</div>' +
+            (ev.description ? '<b>' + esc(ev.description) + '</b>' : '<i style="color:#888">Без описания</i>') +
+            '<div style="font-size:11px;color:#888;margin-top:4px">Исчезнет через ~' + ev.minutes_left + ' мин</div>';
+        if (ev.user_id === parseInt(state.userId)) {
+            popup += '<button class="btn btn-danger btn-sm" style="margin-top:6px;width:100%" onclick="deleteEvent(' + ev.id + ')">Удалить метку</button>';
+        }
+        popup += '</div>';
+        circle.bindPopup(popup);
+    });
+}
+
+async function deleteEvent(eventId) {
+    var confirmed = await new Promise(function(resolve) {
+        showConfirm('Удалить метку?', resolve);
+    });
+    if (!confirmed) return;
+    var res = await api('/map/events/' + eventId, { method: 'DELETE' });
+    if (res && res.ok) {
+        loadMapEvents();
+    } else {
+        showAlert('Не удалось удалить: ' + ((res && res.error) || 'ошибка'));
+    }
+}
+
+function renderEventTypes() {
+    var list = document.getElementById('ev-type-list');
+    list.innerHTML = EVENT_TYPES.map(function(t) {
+        return '<button class="ev-type-chip' + (state.eventType === t.key ? ' active' : '') + '" ' +
+            'onclick="selectEventType(\'' + t.key + '\')">' +
+            '<i style="background:' + t.color + '"></i>' + t.label + '</button>';
+    }).join('');
+}
+
+function selectEventType(key) {
+    state.eventType = key;
+    renderEventTypes();
+}
+
+function startEventAdd() {
+    if (!state.map) return;
+    state.eventAddMode = true;
+    state.eventType = 'accident';
+    renderEventTypes();
+    var panel = document.getElementById('event-panel');
+    panel.style.display = 'block';
+    document.getElementById('ev-desc').value = '';
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    showAlert('Нажмите на карте место события');
+    state.eventClickHandler = function(e) {
+        if (!state.eventAddMode) return;
+        state.eventLat = e.latlng.lat;
+        state.eventLng = e.latlng.lng;
+        if (!state.eventMarker) {
+            state.eventMarker = L.marker([state.eventLat, state.eventLng]).addTo(state.map);
+        } else {
+            state.eventMarker.setLatLng([state.eventLat, state.eventLng]);
+        }
+    };
+    state.map.on('click', state.eventClickHandler);
+}
+
+function cancelEventAdd() {
+    state.eventAddMode = false;
+    document.getElementById('event-panel').style.display = 'none';
+    if (state.eventClickHandler) {
+        state.map.off('click', state.eventClickHandler);
+        state.eventClickHandler = null;
+    }
+    if (state.eventMarker) {
+        state.map.removeLayer(state.eventMarker);
+        state.eventMarker = null;
+    }
+    state.eventLat = null;
+    state.eventLng = null;
+}
+
+async function saveEvent() {
+    if (state.eventLat == null || state.eventLng == null) {
+        showAlert('Сначала нажмите на карте место события');
+        return;
+    }
+    var desc = document.getElementById('ev-desc').value.trim();
+    var res = await api('/map/events', {
+        method: 'POST',
+        body: {
+            lat: state.eventLat,
+            lng: state.eventLng,
+            event_type: state.eventType,
+            description: desc,
+        }
+    });
+    if (res && res.ok) {
+        cancelEventAdd();
+        loadMapEvents();
+        showAlert('Метка добавлена. Исчезнет через 4 часа.');
+    } else {
+        showAlert('Не удалось добавить метку: ' + ((res && res.error) || 'ошибка'));
+    }
 }

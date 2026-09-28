@@ -1098,7 +1098,7 @@ async function saveEvent() {
     if (res && res.ok) {
         cancelEventAdd();
         loadMapEvents();
-        showAlert('Метка добавлена. Исчезнет через 4 часа.');
+        showAlert('Метка добавлена. Исчезнет через 1,5 часа.');
     } else {
         showAlert('Не удалось добавить метку: ' + ((res && res.error) || 'ошибка'));
     }

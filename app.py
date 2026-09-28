@@ -17,11 +17,21 @@ from db.engine import engine, Base
 async def on_startup():
     from sqlalchemy import text
     from db.bootstrap import ensure_enum_statements
+    from db.engine import engine, Base
 
-    async with engine.begin() as conn:
-        for stmt in ensure_enum_statements():
-            await conn.execute(text(stmt))
-        await conn.run_sync(Base.metadata.create_all)
+    last_err: Exception | None = None
+    for attempt in range(5):
+        try:
+            async with engine.begin() as conn:
+                for stmt in ensure_enum_statements():
+                    await conn.execute(text(stmt))
+                await conn.run_sync(Base.metadata.create_all)
+            return
+        except Exception as e:  # noqa: BLE001 - keep the process alive, retry later
+            last_err = e
+            logging.getLogger(__name__).warning("DB schema init attempt %s failed: %s", attempt + 1, e)
+            await asyncio.sleep(5)
+    logging.getLogger(__name__).warning("DB schema init failed after retries: %s", last_err)
 
 
 async def main():
@@ -34,10 +44,11 @@ async def main():
 
     asyncio.create_task(dp.start_polling(bot))
 
+    port = int(os.environ.get("PORT", settings.WEBAPP_PORT))
     uv_config = uvicorn.Config(
         fastapi_app,
         host=settings.WEBAPP_HOST,
-        port=settings.WEBAPP_PORT,
+        port=port,
         log_level="info",
     )
     server = uvicorn.Server(uv_config)

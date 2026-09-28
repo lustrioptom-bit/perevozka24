@@ -15,6 +15,8 @@ from webapp.routers.api import MAP_EVENT_TTL_HOURS
 
 logger = logging.getLogger(__name__)
 
+import_state = {"enabled": False, "sources": [], "last_run": None, "last_inserted": 0, "last_error": None}
+
 FETCH_INTERVAL_SECONDS = 300
 MAX_GEOCODES_PER_CYCLE = 24
 DEDUP_DISTANCE_KM = 0.4
@@ -146,6 +148,7 @@ async def _run_cycle(username: str) -> None:
     candidates = _candidate_lines(messages)
     logger.info("[import:%s] %d candidate lines", username, len(candidates))
     if not candidates:
+        import_state.update(last_run=datetime.utcnow().isoformat(), last_inserted=0, last_error=None)
         return
 
     async with async_session() as session:
@@ -220,6 +223,9 @@ async def _run_cycle(username: str) -> None:
                 continue
         await session.commit()
         logger.info("[import:%s] geocoded %d, inserted %d", username, geocoded, inserted)
+        import_state.update(
+            last_run=datetime.utcnow().isoformat(), last_inserted=inserted, last_error=None
+        )
 
 
 async def _import_loop() -> None:
@@ -230,12 +236,15 @@ async def _import_loop() -> None:
                 await _run_cycle(username)
             except Exception as e:
                 logger.warning("[import:%s] cycle failed: %s", username, e)
+                import_state.update(last_run=datetime.utcnow().isoformat(), last_error=str(e)[:200])
         await asyncio.sleep(FETCH_INTERVAL_SECONDS)
 
 
 def start_channel_events_import() -> None:
     sources = settings.CHANNEL_IMPORT_SOURCES
     if not sources:
+        logger.info("[import] disabled: CHANNEL_IMPORT_SOURCES_RAW not set")
         return
+    import_state.update(enabled=True, sources=sources)
     logger.info("[import] watching channels: %s", ", ".join(sources))
     asyncio.create_task(_import_loop())

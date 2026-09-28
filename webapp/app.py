@@ -178,7 +178,15 @@ async def start_channel_events_import():
 
 @app.get("/health", response_class=PlainTextResponse)
 async def health():
-    return "ok|nav"
+    from webapp.services import events_import
+    st = events_import.import_state
+    status = "on" if st["enabled"] else "off"
+    if st["last_run"]:
+        run = f"|last:{st['last_run']}|ins:{st['last_inserted']}"
+    else:
+        run = "|last:never"
+    err = f"|err:{st['last_error']}" if st.get("last_error") else ""
+    return f"ok|nav|imp:{status}{run}{err}"
 
 
 class NoCacheMiddleware(BaseHTTPMiddleware):

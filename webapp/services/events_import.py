@@ -22,6 +22,7 @@ import_state = {
     "last_candidates": 0,
     "last_geocoded": 0,
     "last_inserted": 0,
+    "last_extended": 0,
     "last_error": None,
 }
 
@@ -31,6 +32,8 @@ DEDUP_DISTANCE_KM = 0.4
 NOMINATIM_PAUSE = 1.5
 CACHE_TTL = timedelta(days=7)
 NEGATIVE_CACHE_TTL = timedelta(hours=3)
+RECURRING_WINDOW = timedelta(hours=24)
+COOLDOWN = timedelta(hours=4)
 
 _STREET_LEXEME_RE = re.compile(
     r"\b(?:улица|ул\.|бульвар|проспект|пр-т|переулок|пер\.|площадь|пл\.|набережная|шоссе|проезд)\b",
@@ -237,27 +240,41 @@ async def _run_cycle(username: str) -> None:
             await session.commit()
 
         now = datetime.utcnow()
-        existing = list(
-            (await session.execute(select(MapEvent).where(MapEvent.expires_at > now))).scalars().all()
-        )
 
-        stats = {"geocoded": 0, "cache_hits": 0}
-        inserted = 0
+        stats = {"geocoded": 0, "cache_hits": 0, "inserted": 0, "extended": 0}
         geo_before = geo_stats_snapshot()
+        max_candidates = 40
+        processed = 0
         for cleaned, event_type in candidates:
+            if processed >= max_candidates:
+                break
+            placed = False
             for address in _address_candidates(cleaned):
                 coords = await _cached_geocode(session, address, now, stats)
                 if not coords:
                     continue
                 lat, lng = coords
-                duplicate = any(
-                    e.event_type == event_type
-                    and e.user_id == system_user_id
-                    and haversine(lat, lng, e.lat, e.lng) <= DEDUP_DISTANCE_KM
-                    for e in existing
-                )
-                if duplicate:
-                    break
+                near = (
+                    await session.execute(
+                        select(MapEvent)
+                        .where(
+                            MapEvent.user_id == system_user_id,
+                            MapEvent.event_type == event_type,
+                            MapEvent.lat.between(lat - 0.006, lat + 0.006),
+                            MapEvent.lng.between(lng - 0.006, lng + 0.006),
+                        )
+                        .order_by(MapEvent.created_at.desc())
+                    )
+                ).scalars().all()
+                old = next((e for e in near if haversine(lat, lng, e.lat, e.lng) <= DEDUP_DISTANCE_KM), None)
+                if old:
+                    if old.expires_at > now and (now - old.created_at) < RECURRING_WINDOW:
+                        old.expires_at = now + timedelta(hours=MAP_EVENT_TTL_HOURS)
+                        old.description = cleaned[:500]
+                        stats["extended"] += 1
+                        break
+                    if (now - old.created_at) < COOLDOWN:
+                        break
                 session.add(
                     MapEvent(
                         user_id=system_user_id,
@@ -268,15 +285,21 @@ async def _run_cycle(username: str) -> None:
                         expires_at=now + timedelta(hours=MAP_EVENT_TTL_HOURS),
                     )
                 )
-                inserted += 1
+                stats["inserted"] += 1
+                placed = True
                 break
+            if placed:
+                processed += 1
         await session.commit()
-        logger.info("[import:%s] inserted %d", username, inserted)
+        logger.info(
+            "[import:%s] inserted %d, extended %d", username, stats["inserted"], stats["extended"]
+        )
         import_state.update(
             last_run=datetime.utcnow().isoformat(),
             last_candidates=len(candidates),
             last_geocoded=stats["geocoded"],
-            last_inserted=inserted,
+            last_inserted=stats["inserted"],
+            last_extended=stats["extended"],
             last_error=None,
         )
         delta = _geo_stats_delta(geo_before)

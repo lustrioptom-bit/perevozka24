@@ -193,7 +193,7 @@ async def health():
     if st["last_run"]:
         run = (
             f"|last:{st['last_run']}|cand:{st['last_candidates']}"
-            f"|geo:{st['last_geocoded']}|ins:{st['last_inserted']}"
+            f"|geo:{st['last_geocoded']}|ins:{st['last_inserted']}|ext:{st['last_extended']}"
         )
     else:
         run = "|last:never"

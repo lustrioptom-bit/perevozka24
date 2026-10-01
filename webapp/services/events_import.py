@@ -26,15 +26,14 @@ import_state = {
     "last_error": None,
 }
 
-FETCH_INTERVAL_SECONDS = 300
+FETCH_INTERVAL_SECONDS = 60
 MAX_GEOCODES_PER_CYCLE = 10
 DEDUP_DISTANCE_KM = 0.4
 NOMINATIM_PAUSE = 1.5
 CACHE_TTL = timedelta(days=7)
 NEGATIVE_CACHE_TTL = timedelta(hours=3)
 REPORT_TZ_OFFSET_HOURS = 3
-TIME_TOLERANCE_MINUTES = 10
-SAME_WINDOW = timedelta(minutes=20)
+TIME_TOLERANCE_MINUTES = 3
 
 _STREET_LEXEME_RE = re.compile(
     r"\b(?:улица|ул\.|бульвар|проспект|пр-т|переулок|пер\.|площадь|пл\.|набережная|шоссе|проезд)\b",
@@ -271,13 +270,12 @@ async def _run_cycle(username: str) -> None:
         for cleaned, event_type, report_dt in candidates:
             if report_dt:
                 start_at = report_dt - tolerance
-                end_at = report_dt + tolerance
-                if end_at <= now:
+                if report_dt + tolerance <= now:
                     stats["skipped"] += 1
                     continue
             else:
                 start_at = now
-                end_at = now + timedelta(hours=MAP_EVENT_TTL_HOURS)
+            visible_until = start_at + timedelta(hours=MAP_EVENT_TTL_HOURS)
             for address in _address_candidates(cleaned):
                 coords = await _cached_geocode(session, address, now, stats)
                 if not coords:
@@ -300,15 +298,15 @@ async def _run_cycle(username: str) -> None:
                         e
                         for e in near
                         if haversine(lat, lng, e.lat, e.lng) <= DEDUP_DISTANCE_KM
-                        and e.created_at
-                        and abs((e.created_at - start_at).total_seconds()) <= SAME_WINDOW.total_seconds()
+                        and e.expires_at
+                        and e.expires_at > now
                     ),
                     None,
                 )
                 if old:
-                    if end_at > old.expires_at:
-                        old.expires_at = end_at
-                        old.description = cleaned[:500]
+                    old.created_at = start_at
+                    old.expires_at = visible_until
+                    old.description = cleaned[:500]
                     stats["skipped"] += 1
                     break
                 session.add(
@@ -319,10 +317,11 @@ async def _run_cycle(username: str) -> None:
                         event_type=event_type,
                         description=cleaned[:500],
                         created_at=start_at,
-                        expires_at=end_at,
+                        expires_at=visible_until,
                     )
                 )
                 stats["inserted"] += 1
+                await session.flush()
                 break
         await session.commit()
         logger.info(

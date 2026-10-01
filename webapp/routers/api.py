@@ -752,7 +752,12 @@ async def map_events(
 ):
     from datetime import datetime
     now = datetime.utcnow()
-    result = await session.execute(select(MapEvent).where(MapEvent.expires_at > now))
+    result = await session.execute(
+        select(MapEvent).where(
+            MapEvent.expires_at > now,
+            (MapEvent.created_at.is_(None)) | (MapEvent.created_at <= now),
+        )
+    )
     events = result.scalars().all()
     out = []
     for e in events:

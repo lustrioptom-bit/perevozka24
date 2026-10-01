@@ -32,8 +32,9 @@ DEDUP_DISTANCE_KM = 0.4
 NOMINATIM_PAUSE = 1.5
 CACHE_TTL = timedelta(days=7)
 NEGATIVE_CACHE_TTL = timedelta(hours=3)
-RECURRING_WINDOW = timedelta(hours=24)
-COOLDOWN = timedelta(hours=4)
+REPORT_TZ_OFFSET_HOURS = 3
+TIME_TOLERANCE_MINUTES = 10
+SAME_WINDOW = timedelta(minutes=20)
 
 _STREET_LEXEME_RE = re.compile(
     r"\b(?:улица|ул\.|бульвар|проспект|пр-т|переулок|пер\.|площадь|пл\.|набережная|шоссе|проезд)\b",
@@ -60,7 +61,8 @@ MILITARY_BLACKLIST = (
     "петух", "пидор", "мудак", "гопот", "борух",
 )
 
-_TIME_RE = re.compile(r"^\d{1,2}:\d{2}\s*")
+_LEADING_TIME_RE = re.compile(r"^(\d{1,2}:\d{2})\s*")
+_TRAILING_TIME_RE = re.compile(r"(?<!\d)(\d{1,2}:\d{2})\s*$")
 _BLOCK_RE = re.compile(r'tgme_widget_message_text[^>]*>(.*?)</div>', re.S)
 
 _WORD = r"А-Яа-яЁёІіЇїЄєҐґ"
@@ -79,10 +81,32 @@ _PRE_KEYWORD = re.compile(
 )
 
 
-def _clean_line(line: str) -> str:
-    line = _TIME_RE.sub("", line)
-    line = re.sub(r"\s+", " ", line)
-    return line.strip(" –—·•*").strip()
+def _extract_report_time(line: str) -> tuple[str, datetime | None]:
+    """Strip a leading/trailing HH:MM timestamp and convert it to naive UTC."""
+    stamp = None
+    lead = _LEADING_TIME_RE.match(line)
+    if lead:
+        stamp = lead.group(1)
+        line = line[lead.end() :]
+    else:
+        tail = _TRAILING_TIME_RE.search(line)
+        if tail:
+            stamp = tail.group(1)
+            line = line[: tail.start()]
+    line = re.sub(r"\s+", " ", line).strip(" ,.;!–—„\"'")
+    if not stamp:
+        return line, None
+    try:
+        hour, minute = (int(x) for x in stamp.split(":"))
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            return line, None
+    except (ValueError, TypeError):
+        return line, None
+    local_now = datetime.utcnow() + timedelta(hours=REPORT_TZ_OFFSET_HOURS)
+    local_report = local_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if local_report - local_now > timedelta(minutes=TIME_TOLERANCE_MINUTES):
+        local_report -= timedelta(days=1)
+    return line, local_report - timedelta(hours=REPORT_TZ_OFFSET_HOURS)
 
 
 def _extract_messages(page: str) -> list[str]:
@@ -136,11 +160,11 @@ def _formulations(address: str) -> list[str]:
     return [f"Харьков, {address} улица", f"Харьков, {address}"]
 
 
-def _candidate_lines(messages: list[str]) -> list[tuple[str, str]]:
+def _candidate_lines(messages: list[str]) -> list[tuple[str, str, datetime | None]]:
     out = []
     for text in messages:
         for line in text.splitlines():
-            cleaned = _clean_line(line)
+            cleaned, report_dt = _extract_report_time(line)
             if len(cleaned) < 8:
                 continue
             low = cleaned.lower()
@@ -148,7 +172,7 @@ def _candidate_lines(messages: list[str]) -> list[tuple[str, str]]:
                 continue
             for pattern, event_type in TRAFFIC_PATTERNS:
                 if pattern.search(cleaned):
-                    out.append((cleaned, event_type))
+                    out.append((cleaned, event_type, report_dt))
                     break
     return out
 
@@ -241,14 +265,19 @@ async def _run_cycle(username: str) -> None:
 
         now = datetime.utcnow()
 
-        stats = {"geocoded": 0, "cache_hits": 0, "inserted": 0, "extended": 0}
+        stats = {"geocoded": 0, "cache_hits": 0, "inserted": 0, "skipped": 0}
         geo_before = geo_stats_snapshot()
-        max_candidates = 40
-        processed = 0
-        for cleaned, event_type in candidates:
-            if processed >= max_candidates:
-                break
-            placed = False
+        tolerance = timedelta(minutes=TIME_TOLERANCE_MINUTES)
+        for cleaned, event_type, report_dt in candidates:
+            if report_dt:
+                start_at = report_dt - tolerance
+                end_at = report_dt + tolerance
+                if end_at <= now:
+                    stats["skipped"] += 1
+                    continue
+            else:
+                start_at = now
+                end_at = now + timedelta(hours=MAP_EVENT_TTL_HOURS)
             for address in _address_candidates(cleaned):
                 coords = await _cached_geocode(session, address, now, stats)
                 if not coords:
@@ -266,15 +295,22 @@ async def _run_cycle(username: str) -> None:
                         .order_by(MapEvent.created_at.desc())
                     )
                 ).scalars().all()
-                old = next((e for e in near if haversine(lat, lng, e.lat, e.lng) <= DEDUP_DISTANCE_KM), None)
+                old = next(
+                    (
+                        e
+                        for e in near
+                        if haversine(lat, lng, e.lat, e.lng) <= DEDUP_DISTANCE_KM
+                        and e.created_at
+                        and abs((e.created_at - start_at).total_seconds()) <= SAME_WINDOW.total_seconds()
+                    ),
+                    None,
+                )
                 if old:
-                    if old.expires_at > now and (now - old.created_at) < RECURRING_WINDOW:
-                        old.expires_at = now + timedelta(hours=MAP_EVENT_TTL_HOURS)
+                    if end_at > old.expires_at:
+                        old.expires_at = end_at
                         old.description = cleaned[:500]
-                        stats["extended"] += 1
-                        break
-                    if (now - old.created_at) < COOLDOWN:
-                        break
+                    stats["skipped"] += 1
+                    break
                 session.add(
                     MapEvent(
                         user_id=system_user_id,
@@ -282,24 +318,25 @@ async def _run_cycle(username: str) -> None:
                         lng=lng,
                         event_type=event_type,
                         description=cleaned[:500],
-                        expires_at=now + timedelta(hours=MAP_EVENT_TTL_HOURS),
+                        created_at=start_at,
+                        expires_at=end_at,
                     )
                 )
                 stats["inserted"] += 1
-                placed = True
                 break
-            if placed:
-                processed += 1
         await session.commit()
         logger.info(
-            "[import:%s] inserted %d, extended %d", username, stats["inserted"], stats["extended"]
+            "[import:%s] inserted %d, skipped %d",
+            username,
+            stats["inserted"],
+            stats["skipped"],
         )
         import_state.update(
             last_run=datetime.utcnow().isoformat(),
             last_candidates=len(candidates),
             last_geocoded=stats["geocoded"],
             last_inserted=stats["inserted"],
-            last_extended=stats["extended"],
+            last_extended=stats["skipped"],
             last_error=None,
         )
         delta = _geo_stats_delta(geo_before)

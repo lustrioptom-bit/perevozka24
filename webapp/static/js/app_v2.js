@@ -44,10 +44,6 @@ const state = {
     createToMarker: null,
     createRouteLine: null,
     createDraft: null,
-    landingMap: null,
-    landingEventLayer: null,
-    landingRefreshId: null,
-    landingCount: null,
 };
 
 console.log('WebApp init, userId:', state.userId);
@@ -96,7 +92,7 @@ function switchTab(tab) {
     var navBtn = document.querySelector('.bottom-nav button[data-tab="' + tab + '"]');
     if (navBtn) navBtn.classList.add('active');
 
-    if (tab === 'feed') { initLandingMap(); loadFeed(); }
+    if (tab === 'feed') loadFeed();
     else if (tab === 'map') initMap();
     else if (tab === 'my') loadMyOrders();
     else if (tab === 'create') initCreateForm();
@@ -318,84 +314,6 @@ async function submitRate(orderId) {
     });
     if (r && r.ok) { showAlert('Спасибо за оценку!'); closeBidModal(); loadMyOrders(); }
     else showAlert(r?.error || 'Ошибка');
-}
-
-// ─── Landing map (read-only road events preview) ───
-
-function initLandingMap() {
-    var el = document.getElementById('landing-map');
-    if (!el) return;
-    if (state.landingMap) {
-        state.landingMap.invalidateSize();
-        loadLandingMapEvents();
-        return;
-    }
-    state.landingCount = document.getElementById('landing-map-count');
-    state.landingMap = L.map('landing-map', {
-        zoomControl: false,
-        attributionControl: false,
-        scrollWheelZoom: false,
-        dragging: true,
-        tap: false
-    }).setView([49.9935, 36.2304], 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap'
-    }).addTo(state.landingMap);
-    state.landingEventLayer = L.layerGroup().addTo(state.landingMap);
-
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(function(pos) {
-            state.landingMap.setView([pos.coords.latitude, pos.coords.longitude], 12);
-        }, function() {});
-    }
-
-    setTimeout(function() { state.landingMap.invalidateSize(); }, 250);
-    loadLandingMapEvents();
-
-    if (!state.landingRefreshId) {
-        state.landingRefreshId = setInterval(function() {
-            if (state.currentTab === 'feed' && state.landingMap) loadLandingMapEvents();
-        }, 60000);
-    }
-}
-
-async function loadLandingMapEvents() {
-    if (!state.landingMap || !state.landingEventLayer) return;
-    var center = state.landingMap.getCenter();
-    var events = await api('/map/events?lat=' + center.lat + '&lng=' + center.lng + '&radius=100');
-    state.landingEventLayer.clearLayers();
-    if (!Array.isArray(events)) {
-        if (state.landingCount) state.landingCount.textContent = '—';
-        return;
-    }
-    events.forEach(function(ev) {
-        var info = evTypeInfo(ev.event_type);
-        L.circleMarker([ev.lat, ev.lng], {
-            radius: 8,
-            color: '#ffffff',
-            weight: 2,
-            fillColor: info.color,
-            fillOpacity: 0.95
-        }).addTo(state.landingEventLayer).bindPopup(
-            '<div style="min-width:150px">' +
-            '<div style="font-size:11px;color:#666;margin-bottom:2px">✦ ' + info.label + '</div>' +
-            (ev.description ? '<b>' + esc(ev.description) + '</b>' : '<i style="color:#888">Без описания</i>') +
-            '<div style="font-size:11px;color:#888;margin-top:4px">Исчезнет через ~' + ev.minutes_left + ' мин</div>' +
-            '</div>'
-        );
-    });
-    if (state.landingCount) {
-        state.landingCount.textContent = events.length
-            ? events.length + ' ' + plural(events.length, 'событие', 'события', 'событий')
-            : 'Пока пусто';
-    }
-}
-
-function plural(n, one, few, many) {
-    var mod10 = n % 10, mod100 = n % 100;
-    if (mod10 === 1 && mod100 !== 11) return one;
-    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
-    return many;
 }
 
 // ─── Map ───

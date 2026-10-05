@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Perevozka24</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <link rel="stylesheet" href="/static/css/style.css?v=12">
+    <link rel="stylesheet" href="/static/css/style.css?v=11">
 </head>
 <body>
 
@@ -15,17 +15,6 @@
 
 <!-- Tab: Feed -->
 <div id="tab-feed" class="tab-content active">
-    <div class="landing-map-card">
-        <div class="landing-map-head">
-            <span class="landing-map-title">Ситуация на дорогах</span>
-            <span id="landing-map-count" class="landing-map-count">—</span>
-        </div>
-        <div id="landing-map"></div>
-        <div class="landing-map-foot">
-            <span class="landing-map-hint">Метки обновляются каждую минуту</span>
-            <button class="btn btn-outline btn-sm" onclick="switchTab('map')">Открыть карту</button>
-        </div>
-    </div>
     <div class="filter-row">
         <button class="filter-chip active" data-filter="all" onclick="setFilter('all')">Все</button>
         <button class="filter-chip" data-filter="freight" onclick="setFilter('freight')">Груз</button>
@@ -142,6 +131,6 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="/static/js/app_v2.js?v=12"></script>
+<script src="/static/js/app_v2.js?v=11"></script>
 </body>
 </html>

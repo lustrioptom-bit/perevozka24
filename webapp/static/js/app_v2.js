@@ -20,7 +20,7 @@ function showConfirm(msg, callback) {
 
 const state = {
     userId: tg?.initDataUnsafe?.user?.id || new URLSearchParams(window.location.search).get('user_id') || '0',
-    currentTab: 'feed',
+    currentTab: 'map',
     currentFilter: 'all',
     user: null,
     promo: null,
@@ -66,7 +66,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initNavigation();
     loadProfile();
     loadPromo();
-    switchTab('feed');
+    switchTab('map');
 
     var startapp = new URLSearchParams(window.location.search).get('startapp');
     if (startapp && startapp.startsWith('order_')) {

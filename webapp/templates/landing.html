@@ -18,6 +18,7 @@
     <meta name="twitter:title" content="Perevozka24 — попутники та перевезення в Telegram">
     <meta name="twitter:description" content="Створюйте замовлення, обирайте водіїв та відстежуйте машину на карті. 0% комісії.">
     <meta name="twitter:image" content="https://perevozka24.onrender.com/static/og-preview.png">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <!-- Plausible Analytics — раскомментировать при подключении -->
     <!-- <script defer data-domain="perevozka24.onrender.com" src="https://plausible.io/js/script.js"></script> -->
     <style>
@@ -137,6 +138,17 @@
         .footer-links a { color: #94a3b8; text-decoration: none; margin-left: 20px; font-size: 14px; }
         .footer-links a:hover { color: #fff; }
 
+        /* Road events map */
+        .roadmap-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; flex-wrap: wrap; }
+        .roadmap-count { font-size: 15px; font-weight: 700; color: #2563eb; background: #eff6ff; border-radius: 999px; padding: 8px 18px; white-space: nowrap; }
+        .roadmap-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 20px; overflow: hidden; box-shadow: 0 12px 40px rgba(15,23,42,0.08); }
+        #roadmap-map { width: 100%; height: 420px; background: #e8f0fa; }
+        .roadmap-foot { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 20px; border-top: 1px solid #e2e8f0; flex-wrap: wrap; }
+        .roadmap-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: #475569; }
+        .roadmap-legend span { white-space: nowrap; }
+        .roadmap-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+        .roadmap-note { font-size: 12px; color: #94a3b8; }
+
         [data-ru] { display: none; }
         html[data-lang="ru"] [data-ru] { display: initial; }
         html[data-lang="ru"] [data-uk] { display: none; }
@@ -156,6 +168,8 @@
             .cta { padding: 48px 24px; }
             .cta h2 { font-size: 27px; }
             .fomo-bar { flex-direction: column; text-align: center; }
+            #roadmap-map { height: 320px; }
+            .roadmap-head { align-items: flex-start; }
         }
     </style>
 </head>
@@ -233,6 +247,36 @@
                     <div class="route">Kharkiv → Poltava</div>
                     <div class="meta"><span>1 500 &#8372;</span><span data-uk>Водій у дорозі</span><span data-ru>Водитель в пути</span></div>
                 </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="roadmap">
+    <div class="container">
+        <div class="roadmap-head">
+            <div>
+                <div class="section-tag" data-uk>Карта подорожей</div>
+                <div class="section-tag" data-ru>Карта дорог</div>
+                <h2 class="section-title" data-uk>Ситуація на дорогах у реальному часі</h2>
+                <h2 class="section-title" data-ru>Ситуация на дорогах в реальном времени</h2>
+                <p class="section-desc" data-uk>Мітки оновлюються щохвилини: ДТП, затори, ремонти та перекриття, які надсилають водії.</p>
+                <p class="section-desc" data-ru>Метки обновляются каждую минуту: ДТП, пробки, ремонты и перекрытия, которые присылают водители.</p>
+            </div>
+            <div class="roadmap-count" id="roadmap-count">—</div>
+        </div>
+        <div class="roadmap-card">
+            <div id="roadmap-map"></div>
+            <div class="roadmap-foot">
+                <div class="roadmap-legend">
+                    <span><i style="background:#ef4444"></i><span data-uk>НП/ЧС</span><span data-ru>ДСН/ЧС</span></span>
+                    <span><i style="background:#f97316"></i><span data-uk>Аварія</span><span data-ru>Авария</span></span>
+                    <span><i style="background:#f59e0b"></i><span data-uk>Затор</span><span data-ru>Пробка</span></span>
+                    <span><i style="background:#3b82f6"></i><span data-uk>Дорожні роботи</span><span data-ru>Дорожные работы</span></span>
+                    <span><i style="background:#71717a"></i><span data-uk>Інше</span><span data-ru>Другое</span></span>
+                </div>
+                <span class="roadmap-note" data-uk>Мітки зникають через 1,5 години після появи</span>
+                <span class="roadmap-note" data-ru>Метки исчезают через 1,5 часа после появления</span>
             </div>
         </div>
     </div>
@@ -500,6 +544,7 @@
     </div>
 </footer>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // ── Language switch ──
 function setLang(lang) {
@@ -583,6 +628,95 @@ function submitRouteSub() {
         msg.textContent = 'Network error';
     });
 }
+// ── Live road events map ──
+var ROAD_TYPES = [
+    {key: 'dsn', color: '#ef4444', uk: 'НП/ЧС', ru: 'ДСН/ЧС'},
+    {key: 'accident', color: '#f97316', uk: 'Аварія', ru: 'Авария'},
+    {key: 'traffic', color: '#f59e0b', uk: 'Затор', ru: 'Пробка'},
+    {key: 'road', color: '#3b82f6', uk: 'Дорожні роботи', ru: 'Дорожные работы'},
+    {key: 'other', color: '#71717a', uk: 'Інше', ru: 'Другое'}
+];
+var roadMap = null, roadLayer = null, roadTimer = null;
+
+function isRu() { return document.documentElement.getAttribute('data-lang') === 'ru'; }
+
+function escHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+        return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+}
+
+function roadTypeInfo(key) {
+    for (var i = 0; i < ROAD_TYPES.length; i++) {
+        if (ROAD_TYPES[i].key === key) return ROAD_TYPES[i];
+    }
+    return ROAD_TYPES[ROAD_TYPES.length - 1];
+}
+
+function roadCount(n) {
+    var a = n % 10, b = n % 100;
+    if (a === 1 && b !== 11) return n + ' подія';
+    if (a >= 2 && a <= 4 && (b < 10 || b >= 20)) return n + ' події';
+    return n + ' подій';
+}
+
+function initRoadMap() {
+    var el = document.getElementById('roadmap-map');
+    if (!el || typeof L === 'undefined') return;
+    if (roadMap) { roadMap.invalidateSize(); loadRoadEvents(); return; }
+    roadMap = L.map('roadmap-map', { scrollWheelZoom: false }).setView([49.9935, 36.2304], 11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap',
+        maxZoom: 19
+    }).addTo(roadMap);
+    roadLayer = L.layerGroup().addTo(roadMap);
+    setTimeout(function() { roadMap.invalidateSize(); }, 300);
+    window.addEventListener('resize', function() { roadMap.invalidateSize(); });
+    loadRoadEvents();
+    if (!roadTimer) {
+        roadTimer = setInterval(function() {
+            if (document.getElementById('roadmap-map')) loadRoadEvents();
+        }, 60000);
+    }
+}
+
+function loadRoadEvents() {
+    if (!roadMap || !roadLayer) return;
+    var center = roadMap.getCenter();
+    var url = '/api/map/events?lat=' + center.lat.toFixed(4) + '&lng=' + center.lng.toFixed(4) + '&radius=100';
+    fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(events) {
+            if (!Array.isArray(events)) return;
+            roadLayer.clearLayers();
+            var badge = document.getElementById('roadmap-count');
+            if (!events.length) {
+                if (badge) badge.textContent = isRu() ? 'Пока пусто' : 'Поки порожньо';
+                return;
+            }
+            if (badge) badge.textContent = roadCount(events.length);
+            events.forEach(function(ev) {
+                var info = roadTypeInfo(ev.event_type);
+                var label = isRu() ? info.ru : info.uk;
+                var popup = '<div style="min-width:150px">' +
+                    '<div style="font-size:11px;color:#666;margin-bottom:2px">✦ ' + label + '</div>' +
+                    (ev.description ? '<b>' + escHtml(ev.description) + '</b>' : '<i style="color:#888">—</i>') +
+                    '<div style="font-size:11px;color:#888;margin-top:4px">' +
+                    (isRu() ? 'Исчезнет через' : 'Зникне через') + ' ~' + (ev.minutes_left || 0) +
+                    (isRu() ? ' мин' : ' хв') + '</div></div>';
+                L.circleMarker([ev.lat, ev.lng], {
+                    radius: 9,
+                    color: '#ffffff',
+                    weight: 2,
+                    fillColor: info.color,
+                    fillOpacity: 0.95
+                }).addTo(roadLayer).bindPopup(popup);
+            });
+        })
+        .catch(function() {});
+}
+
+window.addEventListener('load', initRoadMap);
 </script>
 
 </body>

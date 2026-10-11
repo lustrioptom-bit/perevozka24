@@ -44,7 +44,7 @@ _HOUSE = r"\d+(?:[-\u2013]\d+)*(?:[-\u2013][А-Яа-яІіЇїЄєҐґ])?(?:/\d+
 _TRAILING_NUMBERS = re.compile(rf"(?:\s+{_HOUSE}(?:\s*,\s*{_HOUSE})*)+$")
 
 _TZ_OFFSET = timedelta(hours=3)
-_TIME_LINE_RE = re.compile(r"Час:|\d{1,2}:\d{2}\s*[-\u2013]\s*\d{1,2}:\d{2}")
+_TIME_LINE_RE = re.compile(r"Час:|\d{1,2}:\d{2}\D{0,8}\d{1,2}:\d{2}")
 _MAX_WINDOW = timedelta(days=7)
 
 
@@ -92,8 +92,9 @@ def _parse_window(text: str, now_utc: datetime) -> tuple[datetime | None, dateti
         except ValueError:
             return None
 
+    end_date_idx = (len(dates) - 1) if len(dates) >= 2 else (0 if dates else None)
     start_local = build(0, 0 if dates else None)
-    end_local = build(len(times) - 1, (len(dates) - 1) if len(dates) >= 2 else None)
+    end_local = build(len(times) - 1, end_date_idx)
     if start_local is None or end_local is None:
         return None, None, ""
     if end_local <= start_local:
@@ -186,7 +187,7 @@ async def _run_cycle() -> None:
 
         now = datetime.utcnow()
         buffer = timedelta(minutes=UTILITY_TTL_MINUTES)
-        stats = {"geocoded": 0, "cache_hits": 0, "inserted": 0, "updated": 0, "skipped": 0}
+        stats = {"geocoded": 0, "cache_hits": 0, "inserted": 0, "updated": 0, "skipped": 0, "removed": 0}
         geo_before = geo_stats_snapshot()
         seen: set[tuple[str, str]] = set()
 
@@ -195,33 +196,40 @@ async def _run_cycle() -> None:
             if key in seen:
                 continue
             seen.add(key)
-            if end_utc is not None:
-                expires_at = end_utc + buffer
-                created_at = start_utc or now
-            else:
-                expires_at = now + buffer
-                created_at = now
-            if expires_at <= now:
-                stats["skipped"] += 1
-                continue
-            coords = await _cached_geocode(
-                session, street, now, stats, viewbox=KHARKIV_VIEWBOX, bounded=True
-            )
-            if not coords:
-                continue
-            lat, lng = coords
+
             existing = (
                 await session.execute(
                     select(MapEvent)
                     .where(
                         MapEvent.user_id == system_user_id,
                         MapEvent.event_type == event_type,
-                        MapEvent.expires_at > now,
                         MapEvent.description.ilike(f"%{street}%"),
                     )
                     .order_by(MapEvent.created_at.desc())
                 )
             ).scalars().first()
+
+            if end_utc is not None:
+                expires_at = end_utc + buffer
+                created_at = start_utc or now
+                if expires_at <= now:
+                    if existing is not None:
+                        await session.delete(existing)
+                        stats["removed"] += 1
+                    else:
+                        stats["skipped"] += 1
+                    continue
+            else:
+                expires_at = now + buffer
+                created_at = now
+            if existing is not None and existing.expires_at is not None and existing.expires_at <= now:
+                existing = None
+            coords = await _cached_geocode(
+                session, street, now, stats, viewbox=KHARKIV_VIEWBOX, bounded=True
+            )
+            if not coords:
+                continue
+            lat, lng = coords
             if existing:
                 existing.lat = lat
                 existing.lng = lng
@@ -246,11 +254,12 @@ async def _run_cycle() -> None:
 
         await session.commit()
         logger.info(
-            "[utility:%s] sections %d, inserted %d, updated %d, skipped %d",
+            "[utility:%s] sections %d, inserted %d, updated %d, removed %d, skipped %d",
             SOURCE,
             len(sections),
             stats["inserted"],
             stats["updated"],
+            stats["removed"],
             stats["skipped"],
         )
         utility_state.update(

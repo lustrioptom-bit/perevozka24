@@ -43,6 +43,10 @@ _STOP_TAIL = re.compile(
 _HOUSE = r"\d+(?:[-\u2013]\d+)*(?:[-\u2013][А-Яа-яІіЇїЄєҐґ])?(?:/\d+)?"
 _TRAILING_NUMBERS = re.compile(rf"(?:\s+{_HOUSE}(?:\s*,\s*{_HOUSE})*)+$")
 
+_TZ_OFFSET = timedelta(hours=3)
+_TIME_LINE_RE = re.compile(r"Час:|\d{1,2}:\d{2}\s*[-\u2013]\s*\d{1,2}:\d{2}")
+_MAX_WINDOW = timedelta(days=7)
+
 
 def _header_service(line: str) -> str | None:
     stripped = line.lstrip()
@@ -67,13 +71,52 @@ def _valid_street(street: str) -> bool:
     return len(body) >= 3 and bool(re.search(r"[А-Яа-яЁёІіЇїЄєҐґ]{3}", body))
 
 
-def _parse_sections(messages: list[str]) -> list[tuple[str, str, str]]:
-    """Extract (event_type, street, description) from outage digests."""
-    results: list[tuple[str, str, str]] = []
+def _parse_window(text: str, now_utc: datetime) -> tuple[datetime | None, datetime | None, str]:
+    """Parse a 'Час: 09:30 - 17:00 (11.10)' window into naive UTC start/end."""
+    times = re.findall(r"\b(\d{1,2}):(\d{2})\b", text)
+    if not times:
+        return None, None, ""
+    dates = re.findall(r"\((\d{1,2})\.(\d{1,2})\)", text)
+    local_now = now_utc + _TZ_OFFSET
+
+    def build(time_idx: int, date_idx: int | None) -> datetime | None:
+        hour, minute = int(times[time_idx][0]), int(times[time_idx][1])
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            return None
+        if date_idx is not None and date_idx < len(dates):
+            day, month = int(dates[date_idx][0]), int(dates[date_idx][1])
+        else:
+            day, month = local_now.day, local_now.month
+        try:
+            return datetime(local_now.year, month, day, hour, minute)
+        except ValueError:
+            return None
+
+    start_local = build(0, 0 if dates else None)
+    end_local = build(len(times) - 1, (len(dates) - 1) if len(dates) >= 2 else None)
+    if start_local is None or end_local is None:
+        return None, None, ""
+    if end_local <= start_local:
+        end_local += timedelta(days=1)
+    if end_local - start_local > _MAX_WINDOW:
+        return None, None, ""
+    raw = text
+    match = re.search(r"Час:\s*(.+)", text)
+    if match:
+        raw = match.group(1)
+    return start_local - _TZ_OFFSET, end_local - _TZ_OFFSET, raw.strip(" .")
+
+
+def _parse_sections(
+    messages: list[str], now_utc: datetime
+) -> list[tuple[str, str, str, datetime | None, datetime | None]]:
+    """Extract (event_type, street, description, start_utc, end_utc) from outage digests."""
+    results: list[tuple[str, str, str, datetime | None, datetime | None]] = []
     for text in messages:
         if not _DIGEST_HINT.search(text):
             continue
         current: str | None = None
+        window: tuple[datetime | None, datetime | None, str] = (None, None, "")
         for raw_line in text.splitlines():
             line = raw_line.strip()
             if not line:
@@ -81,9 +124,12 @@ def _parse_sections(messages: list[str]) -> list[tuple[str, str, str]]:
             svc = _header_service(line)
             if svc:
                 current = svc
+                window = (None, None, "")
                 continue
             if current is None:
                 continue
+            if _TIME_LINE_RE.search(line):
+                window = _parse_window(line, now_utc)
             matches = list(_STREET_RE.finditer(line))
             for i, match in enumerate(matches):
                 end = matches[i + 1].start() if i + 1 < len(matches) else len(line)
@@ -94,15 +140,19 @@ def _parse_sections(messages: list[str]) -> list[tuple[str, str, str]]:
                 if street.lower() not in segment.lower():
                     continue
                 desc = re.sub(r"\s+", " ", segment).strip(" ,;:-\u2013\u2014")
-                results.append((current, street, desc[:500]))
+                start_utc, end_utc, wtext = window
+                if wtext and not re.search(r"\d{1,2}:\d{2}", segment):
+                    desc = f"{desc} ({wtext})"
+                results.append((current, street, desc[:500], start_utc, end_utc))
     return results
 
 
 async def _run_cycle() -> None:
     from config import settings
 
+    now = datetime.utcnow()
     messages = await _fetch_channel_messages(SOURCE)
-    sections = _parse_sections(messages)
+    sections = _parse_sections(messages, now)
     utility_state.update(
         last_run=datetime.utcnow().isoformat(),
         last_sections=len(sections),
@@ -135,16 +185,25 @@ async def _run_cycle() -> None:
             await session.commit()
 
         now = datetime.utcnow()
-        ttl = timedelta(minutes=UTILITY_TTL_MINUTES)
-        stats = {"geocoded": 0, "cache_hits": 0, "inserted": 0, "updated": 0}
+        buffer = timedelta(minutes=UTILITY_TTL_MINUTES)
+        stats = {"geocoded": 0, "cache_hits": 0, "inserted": 0, "updated": 0, "skipped": 0}
         geo_before = geo_stats_snapshot()
         seen: set[tuple[str, str]] = set()
 
-        for event_type, street, description in sections:
+        for event_type, street, description, start_utc, end_utc in sections:
             key = (event_type, street.lower())
             if key in seen:
                 continue
             seen.add(key)
+            if end_utc is not None:
+                expires_at = end_utc + buffer
+                created_at = start_utc or now
+            else:
+                expires_at = now + buffer
+                created_at = now
+            if expires_at <= now:
+                stats["skipped"] += 1
+                continue
             coords = await _cached_geocode(
                 session, street, now, stats, viewbox=KHARKIV_VIEWBOX, bounded=True
             )
@@ -166,8 +225,8 @@ async def _run_cycle() -> None:
             if existing:
                 existing.lat = lat
                 existing.lng = lng
-                existing.created_at = now
-                existing.expires_at = now + ttl
+                existing.created_at = created_at
+                existing.expires_at = expires_at
                 existing.description = description
                 stats["updated"] += 1
                 continue
@@ -178,8 +237,8 @@ async def _run_cycle() -> None:
                     lng=lng,
                     event_type=event_type,
                     description=description,
-                    created_at=now,
-                    expires_at=now + ttl,
+                    created_at=created_at,
+                    expires_at=expires_at,
                 )
             )
             stats["inserted"] += 1
@@ -187,11 +246,12 @@ async def _run_cycle() -> None:
 
         await session.commit()
         logger.info(
-            "[utility:%s] sections %d, inserted %d, updated %d",
+            "[utility:%s] sections %d, inserted %d, updated %d, skipped %d",
             SOURCE,
             len(sections),
             stats["inserted"],
             stats["updated"],
+            stats["skipped"],
         )
         utility_state.update(
             last_inserted=stats["inserted"],

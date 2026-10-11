@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 SOURCE = "avariukaxarkiv"
 FETCH_INTERVAL_SECONDS = 600
-UTILITY_TTL_HOURS = 6
+UTILITY_TTL_MINUTES = 30
 # Nominatim viewbox for Kharkiv city: left,top,right,bottom (lng/lat)
 KHARKIV_VIEWBOX = "36.10,50.10,36.40,49.90"
 
@@ -135,7 +135,7 @@ async def _run_cycle() -> None:
             await session.commit()
 
         now = datetime.utcnow()
-        ttl = timedelta(hours=UTILITY_TTL_HOURS)
+        ttl = timedelta(minutes=UTILITY_TTL_MINUTES)
         stats = {"geocoded": 0, "cache_hits": 0, "inserted": 0, "updated": 0}
         geo_before = geo_stats_snapshot()
         seen: set[tuple[str, str]] = set()

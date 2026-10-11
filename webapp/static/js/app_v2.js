@@ -976,6 +976,8 @@ var EVENT_TYPES = [
     { key: 'traffic',  label: 'Пробка', color: '#f59e0b' },
     { key: 'road',     label: 'Дорога', color: '#3b82f6' },
     { key: 'other',    label: 'Другое', color: '#71717a' },
+    { key: 'power',    label: 'Нет света', color: '#eab308' },
+    { key: 'water',    label: 'Нет воды', color: '#0ea5e9' },
 ];
 
 function evTypeInfo(key) {

@@ -719,7 +719,7 @@ async def subscribe_route(request: Request, session: AsyncSession = Depends(get_
 
 # ─── Map events (crowdsourced, like KharkovTraffic) ───
 
-MAP_EVENT_TYPES = ("dsn", "accident", "traffic", "road", "other")
+MAP_EVENT_TYPES = ("dsn", "accident", "traffic", "road", "other", "power", "water")
 MAP_EVENT_TTL_HOURS = 1.5
 
 

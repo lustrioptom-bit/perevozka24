@@ -36,7 +36,8 @@ REPORT_TZ_OFFSET_HOURS = 3
 TIME_TOLERANCE_MINUTES = 3
 
 _STREET_LEXEME_RE = re.compile(
-    r"\b(?:улица|ул\.|бульвар|проспект|пр-т|переулок|пер\.|площадь|пл\.|набережная|шоссе|проезд)\b",
+    r"(?:улица|ул\.|бульвар|проспект|пр-т|переулок|пер\.|площадь|пл\.|набережная|шоссе|проезд"
+    r"|вулиця|вул\.|пров\.|провулок|просп\.|проїзд|шосе|в['’]їзд|бульв\.|набережна|площа|майдан)",
     re.I,
 )
 
@@ -176,9 +177,15 @@ def _candidate_lines(messages: list[str]) -> list[tuple[str, str, datetime | Non
     return out
 
 
-async def _geocode_with_backoff(query: str, stats: dict) -> tuple[float, float] | None:
+async def _geocode_with_backoff(
+    query: str,
+    stats: dict,
+    *,
+    viewbox: str | None = None,
+    bounded: bool = False,
+) -> tuple[float, float] | None:
     for attempt in range(3):
-        coords = await _nominatim_geocode(query, _max_attempts=1)
+        coords = await _nominatim_geocode(query, _max_attempts=1, viewbox=viewbox, bounded=bounded)
         stats["geocoded"] += 1
         if coords:
             return coords
@@ -186,10 +193,19 @@ async def _geocode_with_backoff(query: str, stats: dict) -> tuple[float, float] 
     return None
 
 
-async def _cached_geocode(session, address: str, now: datetime, stats: dict) -> tuple[float, float] | None:
+async def _cached_geocode(
+    session,
+    address: str,
+    now: datetime,
+    stats: dict,
+    *,
+    viewbox: str | None = None,
+    bounded: bool = False,
+) -> tuple[float, float] | None:
+    key = address[:256] if not viewbox else f"{address} |{viewbox}"[:256]
     row = (
         await session.execute(
-            select(GeocodeCache).where(GeocodeCache.address == address[:256])
+            select(GeocodeCache).where(GeocodeCache.address == key)
         )
     ).scalar_one_or_none()
     if row:
@@ -203,7 +219,7 @@ async def _cached_geocode(session, address: str, now: datetime, stats: dict) -> 
         return None
     coords = None
     for query in _formulations(address):
-        coords = await _geocode_with_backoff(query, stats)
+        coords = await _geocode_with_backoff(query, stats, viewbox=viewbox, bounded=bounded)
         if stats["geocoded"] >= MAX_GEOCODES_PER_CYCLE:
             break
         if coords:
@@ -215,7 +231,7 @@ async def _cached_geocode(session, address: str, now: datetime, stats: dict) -> 
     else:
         session.add(
             GeocodeCache(
-                address=address[:256],
+                address=key,
                 lat=coords[0] if coords else None,
                 lng=coords[1] if coords else None,
                 last_try=now,

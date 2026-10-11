@@ -183,6 +183,8 @@ async def start_stale_order_cleanup():
 async def start_channel_events_import():
     from webapp.services.events_import import start_channel_events_import as _start_import
     _start_import()
+    from webapp.services.utility_import import start_utility_import
+    start_utility_import()
 
 
 @app.get("/health", response_class=PlainTextResponse)
@@ -199,7 +201,12 @@ async def health():
         run = "|last:never"
     geo = f"|d:{st['geo_detail']}" if st.get("geo_detail") else ""
     err = f"|err:{st['last_error']}" if st.get("last_error") else ""
-    return f"ok|nav|imp:{status}{run}{geo}{err}"
+    from webapp.services import utility_import
+    ust = utility_import.utility_state
+    util = "off"
+    if ust["enabled"]:
+        util = f"on|sect:{ust['last_sections']}|ins:{ust['last_inserted']}|upd:{ust['last_updated']}"
+    return f"ok|nav|imp:{status}{run}{geo}{err}|util:{util}"
 
 
 class NoCacheMiddleware(BaseHTTPMiddleware):

@@ -60,15 +60,26 @@ def _geo_stats_delta(before: dict) -> dict:
     return {k: GEO_STATS[k] - before.get(k, 0) for k in GEO_STATS}
 
 
-async def _nominatim_geocode(address: str, _max_attempts: int = 2) -> tuple[float, float] | None:
+async def _nominatim_geocode(
+    address: str,
+    _max_attempts: int = 2,
+    *,
+    viewbox: str | None = None,
+    bounded: bool = False,
+) -> tuple[float, float] | None:
     import httpx
 
     for attempt in range(_max_attempts):
         try:
+            params = {"q": address, "format": "json", "limit": 1, "countrycodes": "ua"}
+            if viewbox:
+                params["viewbox"] = viewbox
+                if bounded:
+                    params["bounded"] = 1
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(
                     "https://nominatim.openstreetmap.org/search",
-                    params={"q": address, "format": "json", "limit": 1, "countrycodes": "ua"},
+                    params=params,
                     headers={"User-Agent": "Perevozka24/1.0 (logistics-app)"},
                 )
                 if resp.status_code == 200:

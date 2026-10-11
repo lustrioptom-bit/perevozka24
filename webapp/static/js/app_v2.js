@@ -354,6 +354,10 @@ function initMapAt(lat, lng) {
             }
         }, 60000);
     }
+    loadAlertStatus();
+    if (!state.alertRefreshId) {
+        state.alertRefreshId = setInterval(loadAlertStatus, 30000);
+    }
 }
 
 function haversineKm(lat1, lng1, lat2, lng2) {
@@ -985,6 +989,27 @@ function evTypeInfo(key) {
         if (EVENT_TYPES[i].key === key) return EVENT_TYPES[i];
     }
     return EVENT_TYPES[4];
+}
+
+async function loadAlertStatus() {
+    var el = document.getElementById('alert-banner');
+    if (!el) return;
+    try {
+        var resp = await fetch(API + '/alerts');
+        var data = await resp.json();
+        if (!data || data.error) return;
+        var region = data.region || 'Харківська область';
+        if (data.active) {
+            el.textContent = '🚨 Воздушная тревога — ' + region;
+            el.className = 'alert-banner on';
+        } else {
+            el.textContent = '✅ Отбой — ' + region;
+            el.className = 'alert-banner off';
+        }
+        el.style.display = 'block';
+    } catch (e) {
+        // keep last known state on network errors
+    }
 }
 
 async function loadMapEvents() {

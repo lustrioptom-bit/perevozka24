@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     WEBAPP_PORT: int = 8000
     PUBLIC_URL: str = ""
     CHANNEL_IMPORT_SOURCES_RAW: str = "HaxepTCK"
+    ALERT_REGION_RAW: str = "Харків"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
@@ -41,6 +42,10 @@ class Settings(BaseSettings):
         if not self.CHANNEL_IMPORT_SOURCES_RAW:
             return []
         return [x.strip().lstrip("@").lower() for x in self.CHANNEL_IMPORT_SOURCES_RAW.split(",") if x.strip()]
+
+    @property
+    def ALERT_REGION(self) -> str:
+        return self.ALERT_REGION_RAW.strip() or "Харків"
 
     @property
     def DATABASE_URL_ASYNC(self) -> str:

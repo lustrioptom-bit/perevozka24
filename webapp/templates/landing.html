@@ -148,6 +148,10 @@
         .roadmap-legend span { white-space: nowrap; }
         .roadmap-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
         .roadmap-note { font-size: 12px; color: #94a3b8; }
+        .roadmap-alert { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 20px; font-size: 15px; font-weight: 700; color: #fff; }
+        .roadmap-alert.on { background: #dc2626; animation: roadmap-alert-pulse 1.2s ease-in-out infinite; }
+        .roadmap-alert.off { background: #16a34a; }
+        @keyframes roadmap-alert-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
 
         [data-ru] { display: none; }
         html[data-lang="ru"] [data-ru] { display: initial; }
@@ -266,6 +270,7 @@
             <div class="roadmap-count" id="roadmap-count">—</div>
         </div>
         <div class="roadmap-card">
+            <div id="roadmap-alert" class="roadmap-alert" style="display:none"></div>
             <div id="roadmap-map"></div>
             <div class="roadmap-foot">
                 <div class="roadmap-legend">
@@ -640,7 +645,7 @@ var ROAD_TYPES = [
     {key: 'power', color: '#eab308', uk: 'Немає світла', ru: 'Нет света'},
     {key: 'water', color: '#0ea5e9', uk: 'Немає води', ru: 'Нет воды'}
 ];
-var roadMap = null, roadLayer = null, roadTimer = null;
+var roadMap = null, roadLayer = null, roadTimer = null, alertTimer = null;
 
 function isRu() { return document.documentElement.getAttribute('data-lang') === 'ru'; }
 
@@ -677,11 +682,35 @@ function initRoadMap() {
     setTimeout(function() { roadMap.invalidateSize(); }, 300);
     window.addEventListener('resize', function() { roadMap.invalidateSize(); });
     loadRoadEvents();
+    loadAlertStatus();
     if (!roadTimer) {
         roadTimer = setInterval(function() {
             if (document.getElementById('roadmap-map')) loadRoadEvents();
         }, 60000);
     }
+    if (!alertTimer) {
+        alertTimer = setInterval(loadAlertStatus, 30000);
+    }
+}
+
+function loadAlertStatus() {
+    var el = document.getElementById('roadmap-alert');
+    if (!el) return;
+    fetch('/api/alerts')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data || data.error) return;
+            var region = data.region || (isRu() ? 'Харьковская область' : 'Харківська область');
+            if (data.active) {
+                el.textContent = (isRu() ? '🚨 Воздушная тревога — ' : '🚨 Повітряна тривога — ') + region;
+                el.className = 'roadmap-alert on';
+            } else {
+                el.textContent = (isRu() ? '✅ Отбой — ' : '✅ Відбій — ') + region;
+                el.className = 'roadmap-alert off';
+            }
+            el.style.display = 'flex';
+        })
+        .catch(function() {});
 }
 
 function loadRoadEvents() {

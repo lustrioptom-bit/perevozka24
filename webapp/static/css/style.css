@@ -299,6 +299,35 @@ body {
     display: inline-block;
 }
 
+.alert-banner {
+    position: absolute;
+    top: 62px;
+    left: 24px;
+    right: 24px;
+    z-index: 1050;
+    padding: 9px 14px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 700;
+    text-align: center;
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+.alert-banner.on {
+    background: #dc2626;
+    animation: alert-pulse 1.2s ease-in-out infinite;
+}
+
+.alert-banner.off {
+    background: #16a34a;
+}
+
+@keyframes alert-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+}
+
 #event-panel {
     margin-top: 12px;
     background: var(--tg-bg-secondary);

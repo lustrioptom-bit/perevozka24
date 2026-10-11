@@ -185,6 +185,8 @@ async def start_channel_events_import():
     _start_import()
     from webapp.services.utility_import import start_utility_import
     start_utility_import()
+    from webapp.services.alerts import start_alerts_polling
+    start_alerts_polling()
 
 
 @app.get("/health", response_class=PlainTextResponse)
@@ -206,7 +208,11 @@ async def health():
     util = "off"
     if ust["enabled"]:
         util = f"on|sect:{ust['last_sections']}|ins:{ust['last_inserted']}|upd:{ust['last_updated']}"
-    return f"ok|nav|imp:{status}{run}{geo}{err}|util:{util}"
+    from webapp.services.alerts import alert_state
+    alert = "on" if alert_state["enabled"] else "off"
+    if alert_state["enabled"]:
+        alert += "|%s" % ("alert" if alert_state["active"] else "clear")
+    return f"ok|nav|imp:{status}{run}{geo}{err}|util:{util}|alert:{alert}"
 
 
 class NoCacheMiddleware(BaseHTTPMiddleware):

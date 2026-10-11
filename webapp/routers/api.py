@@ -717,6 +717,22 @@ async def subscribe_route(request: Request, session: AsyncSession = Depends(get_
     return {"ok": True}
 
 
+# ─── Air-raid alerts (region level) ───
+
+@router.get("/alerts")
+async def air_raid_alerts():
+    from webapp.services.alerts import alert_state
+
+    return {
+        "active": alert_state["active"],
+        "region": alert_state["region"],
+        "changed": alert_state["changed"],
+        "updated_at": alert_state["updated_at"],
+        "last_poll": alert_state["last_poll"],
+        "regions": alert_state["per_region"],
+    }
+
+
 # ─── Map events (crowdsourced, like KharkovTraffic) ───
 
 MAP_EVENT_TYPES = ("dsn", "accident", "traffic", "road", "other", "power", "water")
